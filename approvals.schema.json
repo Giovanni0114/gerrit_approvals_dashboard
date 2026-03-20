@@ -1,0 +1,45 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Gerrit Approvals Dashboard Config",
+    "description": "Configuration file for gerrit_approvals_config.py",
+    "type": "object",
+    "properties": {
+        "interval": {
+            "type": "integer",
+            "description": "Refresh interval in seconds",
+            "default": 30,
+            "minimum": 1
+        },
+        "default_host": {
+            "type": "string",
+            "description": "Default host to be used for changes"
+        },
+        "changes": {
+            "type": "array",
+            "description": "List of Gerrit changes to track",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "host": {
+                        "type": "string",
+                        "description": "Gerrit SSH host"
+                    },
+                    "hash": {
+                        "type": "string",
+                        "description": "Git commit hash or Gerrit change-id",
+                        "minLength": 1
+                    }
+                },
+                "required": [
+                    "hash"
+                ],
+                "additionalProperties": false
+            },
+            "minItems": 1
+        }
+    },
+    "required": [
+        "changes"
+    ],
+    "additionalProperties": false
+}
