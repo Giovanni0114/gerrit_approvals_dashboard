@@ -134,6 +134,7 @@ def build_table(
 
         patch_sets = data.get("patchSets", [])
         approvals_text = Text()
+        row_style = None
         if patch_sets:
             approvals = patch_sets[-1].get("approvals", [])
             seen = set()
@@ -142,6 +143,14 @@ def build_table(
                 if key in seen:
                     continue
                 seen.add(key)
+
+                if appr.get("type", "?") == "SUBM":
+                    row_style = "on #06402B"
+                elif appr.get("value") == "-2" and appr.get("type", "?") == "Verified":
+                    row_style = "on #320000"
+                elif appr.get("value") == "-1":
+                    row_style = "on #8B4000"
+
                 if approvals_text:
                     approvals_text.append("\n")
                 approvals_text.append(f"{appr.get('type', '?')}: ")
@@ -156,6 +165,7 @@ def build_table(
             subject,
             owner,
             approvals_text,
+            style=row_style,
         )
 
     return table
