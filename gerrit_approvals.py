@@ -2,10 +2,14 @@
 
 import argparse
 import json
+import os
+import select
 import subprocess
 import sys
-import time
+import termios
+import tty
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +22,32 @@ from rich.text import Text
 from utils import NoEcho
 
 DEFAULT_INTERVAL = 30
+
+
+@contextmanager
+def _raw_terminal():
+    """Put stdin into cbreak mode (no echo, char-at-a-time, output processing intact)."""
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd)
+        yield fd
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
+def _read_key(fd: int, timeout: float = 1.0) -> str | None:
+    """Non-blocking key read. Returns single char or None on timeout."""
+    ready, _, _ = select.select([fd], [], [], timeout)
+    if ready:
+        data = os.read(fd, 1).decode("utf-8", errors="replace")
+        if data == "\x1b":
+            # Possible escape sequence — drain any remaining bytes
+            while select.select([fd], [], [], 0.02)[0]:
+                os.read(fd, 1)
+            return "ESC"
+        return data
+    return None
 
 
 @dataclass
@@ -100,11 +130,14 @@ def build_table(
     config_path: str,
     interval: float,
     status_msg: str = "",
+    prompt_msg: str = "",
 ) -> Table:
     """
     VIBE CODED, don't trust it
     """
-    caption = f"[dim]config:[/dim] {config_path} | [dim]interval:[/dim] {interval}s"
+    caption = (
+        f"[dim]config:[/dim] {config_path} | [dim]interval:[/dim] {interval}s | [dim]w[/dim] wait  [dim]q[/dim] quit"
+    )
     if status_msg:
         caption = f"{status_msg}\n{caption}"
     table = Table(
@@ -116,18 +149,22 @@ def build_table(
         row_styles=["", "on #1a1a2e"],
         pad_edge=False,
     )
+    table.add_column("#", style="dim", no_wrap=True, width=3)
     table.add_column("Number", style="magenta", no_wrap=True)
     table.add_column("Commit", style="cyan", no_wrap=True)
     table.add_column("Subject", max_width=60)
     table.add_column("Project", no_wrap=True)
     table.add_column("Approvals")
 
-    for ch in changes:
+    if prompt_msg:
+        table.add_row("", "", "", Text(prompt_msg, style="bold yellow"), "", "")
+
+    for idx, ch in enumerate(changes, 1):
         short = ch.hash[:7]
         data = results.get((ch.host, ch.hash), {})
 
         if "error" in data:
-            table.add_row("", short, Text(data["error"], style="red"), "", "")
+            table.add_row(str(idx), "", short, Text(data["error"], style="red"), "", "")
             continue
 
         url = data.get("url", "")
@@ -172,6 +209,7 @@ def build_table(
                     approvals_text.append(f" ({by_name})", style="dim")
 
         table.add_row(
+            str(idx),
             number_text,
             short,
             subject,
@@ -212,6 +250,16 @@ def _clear_waiting_in_config(config_path: Path, commit_hash: str) -> float:
     for entry in data.get("changes", []):
         if entry.get("hash") == commit_hash:
             entry["waiting"] = False
+    config_path.write_text(json.dumps(data, indent=2) + "\n")
+    return config_mtime(config_path)
+
+
+def _set_waiting_in_config(config_path: Path, commit_hash: str) -> float:
+    """Set waiting=true for the given hash in the config file. Returns new mtime."""
+    data = json.loads(config_path.read_text())
+    for entry in data.get("changes", []):
+        if entry.get("hash") == commit_hash:
+            entry["waiting"] = True
     config_path.write_text(json.dumps(data, indent=2) + "\n")
     return config_mtime(config_path)
 
@@ -268,7 +316,7 @@ def main():
                 return True
         return False
 
-    def refresh_all() -> Table:
+    def refresh_all(prompt_msg: str = "") -> Table:
         nonlocal last_mtime
         pending = [ch for ch in changes if (ch.host, ch.hash) not in submitted_keys]
 
@@ -292,7 +340,7 @@ def main():
                             pass
                     prev_approvals[key] = snapshot
 
-        return build_table(changes, results, str(config_path), interval, status_msg)
+        return build_table(changes, results, str(config_path), interval, status_msg, prompt_msg)
 
     def should_reload() -> bool:
         nonlocal changes, interval, last_mtime, status_msg
@@ -318,16 +366,68 @@ def main():
             return False
 
     try:
-        with Live(refresh_all(), console=console, refresh_per_second=1, screen=True) as live:
+        with _raw_terminal() as fd, Live(refresh_all(), console=console, refresh_per_second=1, screen=True) as live:
+            input_mode = False
+            input_buf = ""
+            seconds_since_refresh = 0
+
+            def _update_table() -> None:
+                prompt = ""
+                if input_mode:
+                    prompt = f"Mark as waiting — enter row # (1-{len(changes)}): {input_buf}_  [ESC=cancel]"
+                live.update(refresh_all(prompt))
+
             while True:
-                for _ in range(interval):
-                    time.sleep(1)
-                    if should_reload():
-                        live.update(refresh_all())
-                        break
+                key = _read_key(fd, timeout=1.0)
+                seconds_since_refresh += 1
+
+                if key == "\x03":  # Ctrl-C
+                    break
+
+                if input_mode:
+                    if key == "ESC":
+                        input_mode = False
+                        input_buf = ""
+                        _update_table()
+                    elif key == "\r":  # Enter
+                        if input_buf.isdigit():
+                            row_num = int(input_buf)
+                            if 1 <= row_num <= len(changes):
+                                ch = changes[row_num - 1]
+                                ch.waiting = True
+                                try:
+                                    last_mtime = _set_waiting_in_config(config_path, ch.hash)
+                                except OSError:
+                                    pass
+                                status_msg = f"[yellow]#{row_num} marked as waiting[/yellow]"
+                            else:
+                                status_msg = f"[red]Invalid row: {input_buf}[/red]"
+                        else:
+                            status_msg = f"[red]Invalid input: {input_buf}[/red]"
+                        input_mode = False
+                        input_buf = ""
+                        _update_table()
+                    elif key == "\x7f" or key == "\x08":  # Backspace
+                        input_buf = input_buf[:-1]
+                        _update_table()
+                    elif key is not None and key.isdigit():
+                        input_buf += key
+                        _update_table()
                 else:
+                    if key == "w":
+                        input_mode = True
+                        input_buf = ""
+                        _update_table()
+                    elif key == "q":
+                        break
+
+                if should_reload():
+                    seconds_since_refresh = 0
+                    _update_table()
+                elif seconds_since_refresh >= interval:
                     status_msg = ""
-                    live.update(refresh_all())
+                    seconds_since_refresh = 0
+                    _update_table()
     except KeyboardInterrupt:
         pass
     finally:
