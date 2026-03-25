@@ -28,6 +28,7 @@ class Change:
     hash: str
     waiting: bool = False
     deleted: bool = False
+    disabled: bool = False
 
 
 def load_config(path: Path) -> tuple[list[Change], int, str | None]:
@@ -42,7 +43,14 @@ def load_config(path: Path) -> tuple[list[Change], int, str | None]:
         commit_hash = entry["hash"]
         if not host:
             raise ValueError(f"Change '{commit_hash}' has no host and no default_host is set")
-        changes.append(Change(host=host, hash=commit_hash, waiting=bool(entry.get("waiting", False))))
+        changes.append(
+            Change(
+                host=host,
+                hash=commit_hash,
+                waiting=bool(entry.get("waiting", False)),
+                disabled=bool(entry.get("disabled", False)),
+            )
+        )
     return changes, interval, default_host
 
 
@@ -110,7 +118,7 @@ def build_table(
     """
     caption = (
         f"[dim]config:[/dim] {config_path} | [dim]interval:[/dim] {interval}s"
-        f" | [dim]a[/dim] add  [dim]w[/dim] wait  [dim]d[/dim] delete  [dim]q[/dim] quit"
+        f" | [dim]a[/dim] add  [dim]w[/dim] wait  [dim]d[/dim] disable  [dim]x[/dim] delete  [dim]q[/dim] quit"
     )
     if status_msg:
         caption = f"{status_msg}\n{caption}"
@@ -148,6 +156,21 @@ def build_table(
                 subject,
                 Text(data.get("project", ""), style="dim"),
                 Text("deleted", style="dim red"),
+                style="on #1c1c1c",
+            )
+            continue
+
+        if ch.disabled:
+            # Show minimal info for disabled rows
+            subject = Text(data.get("subject", ""), style="dim italic")
+            number_str = str(data.get("number", ""))
+            table.add_row(
+                str(idx),
+                Text(number_str, style="dim"),
+                Text(short, style="dim"),
+                subject,
+                Text(data.get("project", ""), style="dim"),
+                Text("disabled", style="dim yellow"),
                 style="on #1c1c1c",
             )
             continue
@@ -261,6 +284,26 @@ def _add_change_to_config(config_path: Path, commit_hash: str, host: str) -> flo
     return config_mtime(config_path)
 
 
+def _set_disabled_in_config(config_path: Path, commit_hash: str) -> float:
+    """Set disabled=true for the given hash in the config file. Returns new mtime."""
+    data = json.loads(config_path.read_text())
+    for entry in data.get("changes", []):
+        if entry.get("hash") == commit_hash:
+            entry["disabled"] = True
+    config_path.write_text(json.dumps(data, indent=2) + "\n")
+    return config_mtime(config_path)
+
+
+def _clear_disabled_in_config(config_path: Path, commit_hash: str) -> float:
+    """Set disabled=false for the given hash in the config file. Returns new mtime."""
+    data = json.loads(config_path.read_text())
+    for entry in data.get("changes", []):
+        if entry.get("hash") == commit_hash:
+            entry["disabled"] = False
+    config_path.write_text(json.dumps(data, indent=2) + "\n")
+    return config_mtime(config_path)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Config-file driven gerrit approvals dashboard ",
@@ -314,9 +357,11 @@ def main():
         return False
 
     def _do_queries() -> None:
-        """Run SSH queries for all non-submitted, non-deleted changes. Updates results in place."""
+        """Run SSH queries for all non-submitted, non-deleted, non-disabled changes. Updates results in place."""
         nonlocal last_mtime
-        pending = [ch for ch in changes if (ch.host, ch.hash) not in submitted_keys and not ch.deleted]
+        pending = [
+            ch for ch in changes if (ch.host, ch.hash) not in submitted_keys and not ch.deleted and not ch.disabled
+        ]
 
         def _query(ch: Change) -> tuple[tuple[str, str], dict]:
             return (ch.host, ch.hash), query_approvals(ch.hash, ch.host)
@@ -337,6 +382,19 @@ def main():
                         except OSError:
                             pass
                     prev_approvals[key] = snapshot
+
+    def _query_disabled_once() -> None:
+        """One-shot query for disabled changes that have no cached data yet."""
+        need = [ch for ch in changes if ch.disabled and (ch.host, ch.hash) not in results]
+        if not need:
+            return
+
+        def _query(ch: Change) -> tuple[tuple[str, str], dict]:
+            return (ch.host, ch.hash), query_approvals(ch.hash, ch.host)
+
+        with ThreadPoolExecutor(max_workers=len(need)) as pool:
+            for key, data in pool.map(_query, need):
+                results[key] = data
 
     def _build(prompt_msg: str = "") -> Table:
         """Build the display table from cached results."""
@@ -379,11 +437,13 @@ def main():
                 return f"Host (Enter=default, #=copy from row, or type): {buf}_  [ESC=cancel]"
         if action == "w":
             label = "Toggle waiting"
+        elif action == "d":
+            label = "Toggle disabled"
         else:
             label = "Toggle deleted"
         hint = f"{label} — enter row # (1-{len(changes)}): {buf}_  [ESC=cancel]"
-        if action == "d" and not buf:
-            hint += "  [a=all submitted  d=purge deleted  r=restore all]"
+        if action == "x" and not buf:
+            hint += "  [a=all submitted  x=purge deleted  r=restore all]"
         return hint
 
     input_state: dict = {"active": False, "buf": "", "action": "", "step": 0, "hash": ""}
@@ -404,6 +464,7 @@ def main():
 
     # Run initial queries synchronously so the first display has data
     _do_queries()
+    _query_disabled_once()
 
     refresh_done = Event()
     refresh_done.set()  # no refresh in progress initially
@@ -531,12 +592,27 @@ def main():
                                             except OSError:
                                                 pass
                                             status_msg = f"[yellow]#{row_num} marked as waiting[/yellow]"
-                                    elif action == "d":
+                                    elif action == "x":
                                         ch.deleted = not ch.deleted
                                         if ch.deleted:
                                             status_msg = f"[red]#{row_num} marked for deletion[/red]"
                                         else:
                                             status_msg = f"[green]#{row_num} restored[/green]"
+                                    elif action == "d":
+                                        if ch.disabled:
+                                            ch.disabled = False
+                                            try:
+                                                last_mtime = _clear_disabled_in_config(config_path, ch.hash)
+                                            except OSError:
+                                                pass
+                                            status_msg = f"[green]#{row_num} re-enabled[/green]"
+                                        else:
+                                            ch.disabled = True
+                                            try:
+                                                last_mtime = _set_disabled_in_config(config_path, ch.hash)
+                                            except OSError:
+                                                pass
+                                            status_msg = f"[yellow]#{row_num} disabled[/yellow]"
                                 else:
                                     status_msg = f"[red]Invalid row: {buf}[/red]"
                             else:
@@ -545,7 +621,7 @@ def main():
                             input_state["buf"] = ""
                         elif key in ("\x7f", "\x08"):
                             input_state["buf"] = input_state["buf"][:-1]
-                        elif input_state["action"] == "d" and not input_state["buf"] and key == "a":
+                        elif input_state["action"] == "x" and not input_state["buf"] and key == "a":
                             # Delete all submitted changes
                             count = 0
                             for ch in changes:
@@ -558,7 +634,7 @@ def main():
                                 status_msg = "[dim]No submitted changes to delete[/dim]"
                             input_state["active"] = False
                             input_state["buf"] = ""
-                        elif input_state["action"] == "d" and not input_state["buf"] and key == "d":
+                        elif input_state["action"] == "x" and not input_state["buf"] and key == "x":
                             # Purge all deleted changes from config now
                             deleted_hashes = {ch.hash for ch in changes if ch.deleted}
                             if deleted_hashes:
@@ -582,7 +658,7 @@ def main():
                                 status_msg = "[dim]Nothing to purge[/dim]"
                             input_state["active"] = False
                             input_state["buf"] = ""
-                        elif input_state["action"] == "d" and not input_state["buf"] and key == "r":
+                        elif input_state["action"] == "x" and not input_state["buf"] and key == "r":
                             # Restore all deleted changes
                             restored = sum(1 for ch in changes if ch.deleted)
                             for ch in changes:
@@ -600,6 +676,10 @@ def main():
                             input_state["active"] = True
                             input_state["buf"] = ""
                             input_state["action"] = "w"
+                        elif key == "x":
+                            input_state["active"] = True
+                            input_state["buf"] = ""
+                            input_state["action"] = "x"
                         elif key == "d":
                             input_state["active"] = True
                             input_state["buf"] = ""
