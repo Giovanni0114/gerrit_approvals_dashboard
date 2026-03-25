@@ -30,7 +30,7 @@ class Change:
     deleted: bool = False
 
 
-def load_config(path: Path) -> tuple[list[Change], int]:
+def load_config(path: Path) -> tuple[list[Change], int, str | None]:
     data = json.loads(path.read_text())
     interval = int(data.get("interval", DEFAULT_INTERVAL))
     if interval < 1:
@@ -43,7 +43,7 @@ def load_config(path: Path) -> tuple[list[Change], int]:
         if not host:
             raise ValueError(f"Change '{commit_hash}' has no host and no default_host is set")
         changes.append(Change(host=host, hash=commit_hash, waiting=bool(entry.get("waiting", False))))
-    return changes, interval
+    return changes, interval, default_host
 
 
 def config_mtime(path: Path) -> float:
@@ -110,7 +110,7 @@ def build_table(
     """
     caption = (
         f"[dim]config:[/dim] {config_path} | [dim]interval:[/dim] {interval}s"
-        f" | [dim]w[/dim] wait  [dim]d[/dim] delete  [dim]q[/dim] quit"
+        f" | [dim]a[/dim] add  [dim]w[/dim] wait  [dim]d[/dim] delete  [dim]q[/dim] quit"
     )
     if status_msg:
         caption = f"{status_msg}\n{caption}"
@@ -253,6 +253,14 @@ def _set_waiting_in_config(config_path: Path, commit_hash: str) -> float:
     return config_mtime(config_path)
 
 
+def _add_change_to_config(config_path: Path, commit_hash: str, host: str) -> float:
+    """Append a new change entry to the config file. Returns new mtime."""
+    data = json.loads(config_path.read_text())
+    data.setdefault("changes", []).append({"hash": commit_hash, "host": host})
+    config_path.write_text(json.dumps(data, indent=2) + "\n")
+    return config_mtime(config_path)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Config-file driven gerrit approvals dashboard ",
@@ -293,7 +301,7 @@ def main():
     status_msg = ""
 
     try:
-        changes, interval = load_config(config_path)
+        changes, interval, default_host = load_config(config_path)
     except (json.JSONDecodeError, KeyError, ValueError) as exc:
         console.print(f"[red]Error loading config:[/red] {exc}")
         sys.exit(1)
@@ -335,14 +343,15 @@ def main():
         return build_table(changes, results, str(config_path), interval, status_msg, prompt_msg)
 
     def should_reload() -> bool:
-        nonlocal changes, interval, last_mtime, status_msg
+        nonlocal changes, interval, default_host, last_mtime, status_msg
         mtime = config_mtime(config_path)
         if mtime <= last_mtime:
             return False
         try:
-            new_changes, new_interval = load_config(config_path)
+            new_changes, new_interval, new_default_host = load_config(config_path)
             changes = new_changes
             interval = new_interval
+            default_host = new_default_host
             last_mtime = mtime
 
             valid_keys = {(ch.host, ch.hash) for ch in changes}
@@ -362,6 +371,12 @@ def main():
             return ""
         buf = input_state["buf"]
         action = input_state["action"]
+        if action == "a":
+            step = input_state["step"]
+            if step == 1:
+                return f"Add change — paste commit hash: {buf}_  [ESC=cancel]"
+            else:
+                return f"Host (Enter=default, #=copy from row, or type): {buf}_  [ESC=cancel]"
         if action == "w":
             label = "Toggle waiting"
         else:
@@ -371,7 +386,7 @@ def main():
             hint += "  [a=all submitted  d=purge deleted  r=restore all]"
         return hint
 
-    input_state: dict = {"active": False, "buf": "", "action": ""}
+    input_state: dict = {"active": False, "buf": "", "action": "", "step": 0, "hash": ""}
     key_queue: Queue[str] = Queue()
 
     def _key_reader() -> None:
@@ -439,6 +454,59 @@ def main():
                         if key == "ESC":
                             input_state["active"] = False
                             input_state["buf"] = ""
+                        elif input_state["action"] == "a":
+                            # Add mode: two-step (hash then host)
+                            if key in ("\r", "\n"):
+                                buf = input_state["buf"]
+                                step = input_state["step"]
+                                if step == 1:
+                                    # Hash submitted — move to host step
+                                    if not buf.strip():
+                                        status_msg = "[red]Hash cannot be empty[/red]"
+                                        input_state["active"] = False
+                                        input_state["buf"] = ""
+                                    else:
+                                        input_state["hash"] = buf.strip()
+                                        input_state["buf"] = ""
+                                        input_state["step"] = 2
+                                else:
+                                    # Host submitted — resolve and add
+                                    commit_hash = input_state["hash"]
+                                    if not buf.strip():
+                                        # Empty → use default_host
+                                        if default_host:
+                                            host = default_host
+                                        else:
+                                            status_msg = "[red]No default_host set in config[/red]"
+                                            input_state["active"] = False
+                                            input_state["buf"] = ""
+                                            continue
+                                    elif buf.strip().isdigit():
+                                        # Number → copy host from that row
+                                        row_num = int(buf.strip())
+                                        if 1 <= row_num <= len(changes):
+                                            host = changes[row_num - 1].host
+                                        else:
+                                            status_msg = f"[red]Invalid row: {buf.strip()}[/red]"
+                                            input_state["active"] = False
+                                            input_state["buf"] = ""
+                                            continue
+                                    else:
+                                        # Literal hostname
+                                        host = buf.strip()
+                                    new_change = Change(host=host, hash=commit_hash)
+                                    changes.append(new_change)
+                                    try:
+                                        last_mtime = _add_change_to_config(config_path, commit_hash, host)
+                                    except OSError:
+                                        pass
+                                    status_msg = f"[green]Added {commit_hash[:7]} @ {host}[/green]"
+                                    input_state["active"] = False
+                                    input_state["buf"] = ""
+                            elif key in ("\x7f", "\x08"):
+                                input_state["buf"] = input_state["buf"][:-1]
+                            elif key.isprintable() and key not in ("", "ESC"):
+                                input_state["buf"] += key
                         elif key in ("\r", "\n"):
                             buf = input_state["buf"]
                             action = input_state["action"]
@@ -536,6 +604,12 @@ def main():
                             input_state["active"] = True
                             input_state["buf"] = ""
                             input_state["action"] = "d"
+                        elif key == "a":
+                            input_state["active"] = True
+                            input_state["buf"] = ""
+                            input_state["action"] = "a"
+                            input_state["step"] = 1
+                            input_state["hash"] = ""
                         elif key == "q":
                             # Purge deleted changes from config before exit
                             deleted_hashes = {ch.hash for ch in changes if ch.deleted}
