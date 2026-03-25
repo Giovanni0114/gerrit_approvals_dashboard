@@ -15,6 +15,8 @@ from rich.live import Live
 from rich.table import Table
 from rich.text import Text
 
+from utils import NoEcho
+
 DEFAULT_INTERVAL = 30
 
 
@@ -333,4 +335,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    with NoEcho() as no_echo:
+        main()
