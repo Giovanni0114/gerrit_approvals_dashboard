@@ -2,17 +2,15 @@
 
 import argparse
 import json
-import os
-import select
 import subprocess
 import sys
-import termios
-import tty
+import time
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from queue import Empty, Queue
+from threading import Thread
 
 from rich.console import Console
 from rich.live import Live
@@ -22,32 +20,6 @@ from rich.text import Text
 from utils import NoEcho
 
 DEFAULT_INTERVAL = 30
-
-
-@contextmanager
-def _raw_terminal():
-    """Put stdin into cbreak mode (no echo, char-at-a-time, output processing intact)."""
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)
-    try:
-        tty.setcbreak(fd)
-        yield fd
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-
-
-def _read_key(fd: int, timeout: float = 1.0) -> str | None:
-    """Non-blocking key read. Returns single char or None on timeout."""
-    ready, _, _ = select.select([fd], [], [], timeout)
-    if ready:
-        data = os.read(fd, 1).decode("utf-8", errors="replace")
-        if data == "\x1b":
-            # Possible escape sequence — drain any remaining bytes
-            while select.select([fd], [], [], 0.02)[0]:
-                os.read(fd, 1)
-            return "ESC"
-        return data
-    return None
 
 
 @dataclass
@@ -365,69 +337,104 @@ def main():
             last_mtime = mtime
             return False
 
-    try:
-        with _raw_terminal() as fd, Live(refresh_all(), console=console, refresh_per_second=1, screen=True) as live:
-            input_mode = False
-            input_buf = ""
-            seconds_since_refresh = 0
+    def _build_prompt() -> str:
+        if not input_state["active"]:
+            return ""
+        buf = input_state["buf"]
+        return f"Mark as waiting — enter row # (1-{len(changes)}): {buf}_  [ESC=cancel]"
 
-            def _update_table() -> None:
-                prompt = ""
-                if input_mode:
-                    prompt = f"Mark as waiting — enter row # (1-{len(changes)}): {input_buf}_  [ESC=cancel]"
-                live.update(refresh_all(prompt))
+    input_state: dict = {"active": False, "buf": ""}
+    key_queue: Queue[str] = Queue()
+
+    def _key_reader() -> None:
+        """Background thread: reads keys from stdin and puts them in the queue."""
+        no_echo = NoEcho.instance
+        if no_echo is None:
+            return
+        while True:
+            k = no_echo.read_key(timeout=0.1)
+            if k is not None:
+                key_queue.put(k)
+
+    reader_thread = Thread(target=_key_reader, daemon=True)
+    reader_thread.start()
+
+    try:
+        with Live(refresh_all(_build_prompt()), console=console, refresh_per_second=1, screen=True) as live:
+            seconds_since_refresh = 0.0
+            needs_visual_update = False
+
+            def _visual_update() -> None:
+                """Redraw the table using cached results (no SSH queries)."""
+                live.update(build_table(changes, results, str(config_path), interval, status_msg, _build_prompt()))
+
+            def _full_refresh() -> None:
+                """Query Gerrit and redraw."""
+                live.update(refresh_all(_build_prompt()))
 
             while True:
-                key = _read_key(fd, timeout=1.0)
-                seconds_since_refresh += 1
+                time.sleep(0.1)
+                seconds_since_refresh += 0.1
 
-                if key == "\x03":  # Ctrl-C
-                    break
-
-                if input_mode:
-                    if key == "ESC":
-                        input_mode = False
-                        input_buf = ""
-                        _update_table()
-                    elif key == "\r":  # Enter
-                        if input_buf.isdigit():
-                            row_num = int(input_buf)
-                            if 1 <= row_num <= len(changes):
-                                ch = changes[row_num - 1]
-                                ch.waiting = True
-                                try:
-                                    last_mtime = _set_waiting_in_config(config_path, ch.hash)
-                                except OSError:
-                                    pass
-                                status_msg = f"[yellow]#{row_num} marked as waiting[/yellow]"
-                            else:
-                                status_msg = f"[red]Invalid row: {input_buf}[/red]"
-                        else:
-                            status_msg = f"[red]Invalid input: {input_buf}[/red]"
-                        input_mode = False
-                        input_buf = ""
-                        _update_table()
-                    elif key == "\x7f" or key == "\x08":  # Backspace
-                        input_buf = input_buf[:-1]
-                        _update_table()
-                    elif key is not None and key.isdigit():
-                        input_buf += key
-                        _update_table()
-                else:
-                    if key == "w":
-                        input_mode = True
-                        input_buf = ""
-                        _update_table()
-                    elif key == "q":
+                # Process all pending keys
+                while True:
+                    try:
+                        key = key_queue.get_nowait()
+                    except Empty:
                         break
 
+                    if input_state["active"]:
+                        if key == "ESC":
+                            input_state["active"] = False
+                            input_state["buf"] = ""
+                        elif key == "\r":
+                            buf = input_state["buf"]
+                            if buf.isdigit():
+                                row_num = int(buf)
+                                if 1 <= row_num <= len(changes):
+                                    ch = changes[row_num - 1]
+                                    if (ch.host, ch.hash) in submitted_keys:
+                                        status_msg = f"[dim]#{row_num} already submitted[/dim]"
+                                    elif ch.waiting:
+                                        status_msg = f"[dim]#{row_num} already waiting[/dim]"
+                                    else:
+                                        ch.waiting = True
+                                        try:
+                                            last_mtime = _set_waiting_in_config(config_path, ch.hash)
+                                        except OSError:
+                                            pass
+                                        status_msg = f"[yellow]#{row_num} marked as waiting[/yellow]"
+                                else:
+                                    status_msg = f"[red]Invalid row: {buf}[/red]"
+                            else:
+                                status_msg = f"[red]Invalid input: {buf}[/red]"
+                            input_state["active"] = False
+                            input_state["buf"] = ""
+                        elif key in ("\x7f", "\x08"):
+                            input_state["buf"] = input_state["buf"][:-1]
+                        elif key.isdigit():
+                            input_state["buf"] += key
+                    else:
+                        if key == "w":
+                            input_state["active"] = True
+                            input_state["buf"] = ""
+                        elif key == "q":
+                            return
+
+                    needs_visual_update = True
+
                 if should_reload():
-                    seconds_since_refresh = 0
-                    _update_table()
+                    seconds_since_refresh = 0.0
+                    _full_refresh()
+                    needs_visual_update = False
                 elif seconds_since_refresh >= interval:
+                    seconds_since_refresh = 0.0
                     status_msg = ""
-                    seconds_since_refresh = 0
-                    _update_table()
+                    _full_refresh()
+                    needs_visual_update = False
+                elif needs_visual_update:
+                    _visual_update()
+                    needs_visual_update = False
     except KeyboardInterrupt:
         pass
     finally:
