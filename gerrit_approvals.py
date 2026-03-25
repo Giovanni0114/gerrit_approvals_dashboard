@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -26,15 +27,16 @@ class Change:
 def load_config(path: Path) -> tuple[list[Change], int]:
     data = json.loads(path.read_text())
     interval = int(data.get("interval", DEFAULT_INTERVAL))
+    if interval < 1:
+        raise ValueError(f"interval must be >= 1, got {interval}")
     default_host = data.get("default_host", None)
     changes = []
     for entry in data.get("changes", []):
-        changes.append(
-            Change(
-                host=entry.get("host", default_host),
-                hash=entry["hash"],
-            )
-        )
+        host = entry.get("host", default_host)
+        commit_hash = entry["hash"]
+        if not host:
+            raise ValueError(f"Change '{commit_hash}' has no host and no default_host is set")
+        changes.append(Change(host=host, hash=commit_hash))
     return changes, interval
 
 
@@ -60,7 +62,9 @@ def query_approvals(commit_hash: str, host: str) -> dict:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         lines = result.stdout.strip().splitlines()
         if not lines:
-            return {"error": "No output from Gerrit"}
+            stderr = result.stderr.strip()
+            msg = f"No output from Gerrit ({stderr})" if stderr else "No output from Gerrit"
+            return {"error": msg}
         data = json.loads(lines[0])
         if "type" in data and data["type"] == "stats":
             return {"error": "Change not found"}
@@ -89,7 +93,7 @@ def format_value(value_str: str) -> Text:
 
 def build_table(
     changes: list[Change],
-    results: dict[str, dict],
+    results: dict[tuple[str, str], dict],
     config_path: str,
     interval: float,
     status_msg: str = "",
@@ -117,7 +121,7 @@ def build_table(
 
     for ch in changes:
         short = ch.hash[:7]
-        data = results.get(ch.hash, {})
+        data = results.get((ch.host, ch.hash), {})
 
         if "error" in data:
             table.add_row("", short, Text(data["error"], style="red"), "", "")
@@ -217,20 +221,24 @@ def main():
         sys.exit(1)
 
     console = Console()
-    results: dict[str, dict] = {}
+    results: dict[tuple[str, str], dict] = {}
     last_mtime = 0.0
     status_msg = ""
 
     try:
         changes, interval = load_config(config_path)
-    except (json.JSONDecodeError, KeyError) as exc:
+    except (json.JSONDecodeError, KeyError, ValueError) as exc:
         console.print(f"[red]Error loading config:[/red] {exc}")
         sys.exit(1)
     last_mtime = config_mtime(config_path)
 
     def refresh_all() -> Table:
-        for ch in changes:
-            results[ch.hash] = query_approvals(ch.hash, ch.host)
+        def _query(ch: Change) -> tuple[tuple[str, str], dict]:
+            return (ch.host, ch.hash), query_approvals(ch.hash, ch.host)
+
+        with ThreadPoolExecutor(max_workers=len(changes) or 1) as pool:
+            for key, data in pool.map(_query, changes):
+                results[key] = data
         return build_table(changes, results, str(config_path), interval, status_msg)
 
     def should_reload() -> bool:
@@ -244,14 +252,14 @@ def main():
             interval = new_interval
             last_mtime = mtime
 
-            valid_hashes = {ch.hash for ch in changes}
-            for h in list(results):
-                if h not in valid_hashes:
-                    del results[h]
+            valid_keys = {(ch.host, ch.hash) for ch in changes}
+            for k in list(results):
+                if k not in valid_keys:
+                    del results[k]
 
             status_msg = "[green]Config reloaded[/green]"
             return True
-        except (json.JSONDecodeError, KeyError) as exc:
+        except (json.JSONDecodeError, KeyError, ValueError) as exc:
             status_msg = f"[red]Config error: {exc}[/red]"
             last_mtime = mtime
             return False
