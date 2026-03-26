@@ -33,6 +33,11 @@
                         "type": "boolean",
                         "description": "When true, row is dimmed until an approval changes, then auto-set to false",
                         "default": false
+                    },
+                    "disabled": {
+                        "type": "boolean",
+                        "description": "When true, change is skipped during SSH queries and visually marked as disabled",
+                        "default": false
                     }
                 },
                 "required": [
