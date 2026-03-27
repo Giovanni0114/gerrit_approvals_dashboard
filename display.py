@@ -71,7 +71,8 @@ def build_table(
         "[dim]w[/dim] wait  "
         "[dim]d[/dim] disable  "
         "[dim]x[/dim] delete  "
-        "[dim]q[/dim] quit"
+        "[dim]q[/dim] quit  "
+        "[dim]r[/dim] refresh  "
     )
 
     if status_msg:

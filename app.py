@@ -3,12 +3,13 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from queue import Empty, Queue
-from threading import Event, Thread
+from threading import Event, Lock, Thread
 
 from rich.console import Console
 from rich.live import Live
 from rich.table import Table
 
+import gerrit
 from config import (
     add_change_to_config,
     config_mtime,
@@ -17,10 +18,10 @@ from config import (
     update_config_field,
 )
 from display import build_table
-import gerrit
 from gerrit import approval_snapshot, is_submitted, query_approvals
 from input_handler import InputHandler
 from models import Change
+from utils import NoEcho, AtomicCounter
 
 
 class App:
@@ -42,6 +43,8 @@ class App:
         self.refresh_done.set()
         self.refresh_pending: bool = False
         self.seconds_since_refresh: float = 0.0
+        self.manual_refresh_lock = Lock()
+        self.manual_refresh_counter = AtomicCounter()
 
     # --- Query methods ---
 
@@ -176,6 +179,27 @@ class App:
                 pass
             self.status_msg = f"[yellow]#{row} disabled[/yellow]"
 
+    def refresh_all(self) -> None:
+        if self.manual_refresh_counter.value() >= 5:
+            self.status_msg = "[red]Manual refresh limit reached[/red]"
+            return
+
+        self.manual_refresh_counter.increment()
+
+        if not self.manual_refresh_lock.locked():
+            self._process_refresh_queue()
+
+    def _process_refresh_queue(self) -> None:
+        with self.manual_refresh_lock:
+            while self.manual_refresh_counter.value() > 0:
+                self.manual_refresh_counter.decrement()
+                try:
+                    self._start_refresh()
+                except Exception as ex:
+                    self.status_msg = f"[red]Error on manual refresh {ex} [/red]"
+                    self.manual_refresh_counter.reset()
+                    return
+
     def add_change(self, commit_hash: str, host: str) -> None:
         new_change = Change(host=host, hash=commit_hash)
         self.changes.append(new_change)
@@ -239,7 +263,6 @@ class App:
 
     def _key_reader(self) -> None:
         """Background thread: reads keys from stdin and puts them in the queue."""
-        from utils import NoEcho
 
         no_echo = NoEcho.instance
         if no_echo is None:
