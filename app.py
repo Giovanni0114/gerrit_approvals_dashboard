@@ -17,6 +17,7 @@ from config import (
     update_config_field,
 )
 from display import build_table
+import gerrit
 from gerrit import approval_snapshot, is_submitted, query_approvals
 from input_handler import InputHandler
 from models import Change
@@ -116,7 +117,13 @@ class App:
     def build(self, prompt_msg: str = "") -> Table:
         """Build the display table from cached results."""
         return build_table(
-            self.changes, self.results, str(self.config_path), self.interval, self.status_msg, prompt_msg
+            self.changes,
+            self.results,
+            str(self.config_path),
+            self.interval,
+            self.status_msg,
+            prompt_msg,
+            ssh_requests=gerrit.ssh_request_count,
         )
 
     def visual_update(self, live: Live) -> None:

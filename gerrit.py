@@ -1,8 +1,15 @@
 import json
 import subprocess
+import threading
+
+_ssh_lock = threading.Lock()
+ssh_request_count: int = 0
 
 
 def query_approvals(commit_hash: str, host: str) -> dict:
+    global ssh_request_count
+    with _ssh_lock:
+        ssh_request_count += 1
     cmd = [
         "ssh",
         "-x",

@@ -62,6 +62,7 @@ def build_table(
     interval: float,
     status_msg: str = "",
     prompt_msg: str = "",
+    ssh_requests: int = 0,
 ) -> Table:
     caption = (
         f"[dim]config:[/dim] {config_path} | "
@@ -77,7 +78,7 @@ def build_table(
         caption = f"{status_msg}\n{caption}"
 
     table = Table(
-        title=f"Gerrit Approvals  (refreshed {datetime.now():%H:%M:%S})",
+        title=f"Gerrit Approvals  (refreshed {datetime.now():%H:%M:%S})  ssh requests: {ssh_requests}",
         caption=caption,
         expand=True,
         box=None,
