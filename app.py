@@ -318,7 +318,7 @@ class App:
             with Live(
                 self.build(self.input.prompt(len(self.changes))),
                 console=self.console,
-                refresh_per_second=1,
+                refresh_per_second=10,
                 screen=True,
             ) as live:
                 while self.running:
