@@ -157,8 +157,8 @@ fields (nullable fields will be present with explicit null values):
 - subject: `string | null`
 - number: `integer | null`
 - project: `string | null`
-- approvals: `list[tuple[string, integer]]`
 - url: `string | null`
+- approvals: `list[tuple[string, integer]]`
 
 How to use
 ----------

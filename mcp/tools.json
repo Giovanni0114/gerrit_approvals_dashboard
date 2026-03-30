@@ -405,13 +405,28 @@
                     "type": "boolean"
                 },
                 "subject": {
-                    "type": "string"
+                    "type": [
+                        "string",
+                        "null"
+                    ]
                 },
                 "number": {
-                    "type": "integer"
+                    "type": [
+                        "integer",
+                        "null"
+                    ]
                 },
                 "project": {
-                    "type": "string"
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "url": {
+                    "type": [
+                        "string",
+                        "null"
+                    ]
                 },
                 "approvals": {
                     "type": "array",
@@ -434,12 +449,6 @@
                             "by"
                         ]
                     }
-                },
-                "url": {
-                    "type": [
-                        "string",
-                        "null"
-                    ]
                 }
             },
             "required": [
@@ -449,7 +458,11 @@
                 "disabled",
                 "deleted",
                 "submitted",
-                "url"
+                "subject",
+                "number",
+                "project",
+                "url",
+                "approvals"
             ]
         }
     }
