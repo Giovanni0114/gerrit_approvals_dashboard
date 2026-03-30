@@ -27,6 +27,12 @@ def main() -> None:
         action="store_true",
         help="Generate an example config file and exit",
     )
+    parser.add_argument(
+        "--mcp",
+        action="store_true",
+        help="start MCP server for gerrit approvals",
+    )
+
     args = parser.parse_args()
 
     config_path = Path(args.config)
@@ -38,6 +44,10 @@ def main() -> None:
         generate_example_config(config_path)
         print(f"Example config written to {config_path} - edit it and run again.")
         sys.exit(0)
+
+    if args.mcp:
+        from mcp_background import BackgroundMCPServer
+        BackgroundMCPServer()
 
     if not config_path.exists():
         print(f"Config file not found: {config_path}")
