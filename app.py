@@ -39,7 +39,7 @@ class App:
         self.status_msg: str = ""
         self.running: bool = True
         self.key_queue: Queue[str] = Queue()
-        self.input: InputHandler = InputHandler()
+        self.input: InputHandler = InputHandler(self)
         self.refresh_done = Event()
         self.refresh_done.set()
         self.refresh_pending: bool = False
@@ -359,7 +359,7 @@ class App:
                             key = self.key_queue.get_nowait()
                         except Empty:
                             break
-                        self.input.handle_key(key, self)
+                        self.input.handle_key(key)
                         needs_visual_update = True
 
                     if self.reload_config():

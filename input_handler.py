@@ -1,166 +1,224 @@
+from dataclasses import dataclass
+from typing import Callable, Iterable
+
 from models import AppContext
+
+Context = dict[str, str]
+
+ENDLINES = ("\r", "\n")
+BACKSPACES = ("\x7f", "\x08")
+
+PROMPTS_FOR_LAST_KEY = {
+    " ": "Changes",
+    "a": "Add change",
+    "w": "Toggle waiting",
+    "d": "Toggle disabled",
+    "x": "Toggle deletion",
+    "o": "Open change in web UI",
+    "s": "Set Automerge +1",
+}
+
+# --------------------------------------------------------------------------------
+
+
+def validator_int(input: str):
+    return input.isnumeric()
+
+
+# --------------------------------------------------------------------------------
+
+
+def refresh(app_ctx: AppContext, ctx: Context) -> None:
+    app_ctx.refresh_all()
+
+
+def quit_app(app_ctx: AppContext, ctx: Context) -> None:
+    app_ctx.quit()
+
+
+# --------------------------------------------------------------------------------
+
+
+def add_change(app_ctx: AppContext, ctx: Context) -> None:
+    hash = ctx["hash"]
+    host = ctx["host"]
+
+    if len(hash) == 0:
+        app_ctx.status_msg = f"[red]Invalid hash: \"{hash}\"[/red]"
+        return
+
+    app_ctx.add_change(hash, host)
+
+
+def toggle_waiting(app_ctx: AppContext, ctx: Context) -> None:
+    idx = ctx["idx"]
+
+    if not validator_int(idx):
+        app_ctx.status_msg = f"[red]Invalid idx: {idx} [/red]"
+        return
+
+    app_ctx.toggle_waiting(int(idx))
+
+
+def handle_deletion(app_ctx: AppContext, ctx: Context) -> None:
+    idx = ctx["idx"]
+
+    if not validator_int(idx):
+        app_ctx.status_msg = f"[red]Invalid idx: {idx} [/red]"
+        return
+
+    app_ctx.toggle_deleted(int(idx))
+
+
+def toggle_disable(app_ctx: AppContext, ctx: Context) -> None:
+    idx = ctx["idx"]
+
+    if not validator_int(idx):
+        app_ctx.status_msg = f"[red]Invalid idx: {idx} [/red]"
+        return
+
+    app_ctx.toggle_disabled(int(idx))
+
+
+def open_change(app_ctx: AppContext, ctx: Context) -> None:
+    idx = ctx["idx"]
+
+    if not validator_int(idx):
+        app_ctx.status_msg = f"[red]Invalid idx: {idx} [/red]"
+        return
+
+    app_ctx.open_change_webui(int(idx))
+
+
+def set_automerge(app_ctx: AppContext, ctx: Context) -> None:
+    idx = ctx["idx"]
+
+    if not validator_int(idx):
+        app_ctx.status_msg = f"[red]Invalid idx: {idx} [/red]"
+        return
+
+    app_ctx.set_automerge(int(idx))
+
+
+# --------------------------------------------------------------------------------
+
+
+@dataclass
+class Action:
+    action: Callable[[AppContext, Context], None]
+    required_inputs: Iterable[str]
+
+
+REFRESH_ACTION = Action(refresh, [])
+QUIT_ACTION = Action(quit_app, [])
+
+LEADER_ACTIONS = {
+    "a": Action(add_change, ["hash", "host"]),
+    "w": Action(toggle_waiting, ["idx"]),
+    "d": Action(toggle_disable, ["idx"]),
+    "x": Action(handle_deletion, ["idx"]),
+    "o": Action(open_change, ["idx"]),
+    "s": Action(set_automerge, ["idx"]),
+}
+
+
+def key_allowed_in_sequence(key: str, sequence: Iterable[str]) -> bool:
+    if key == "<enter>":
+        return True
+
+    match sequence:
+        case []:
+            return key in (" ", "r", "q")
+        case [" "]:
+            return key in LEADER_ACTIONS
+
+    return False
+
+
+def match_action(key: str):
+    match key:
+        case "r":
+            return REFRESH_ACTION
+
+        case "q":
+            return QUIT_ACTION
+
+        case _:
+            return LEADER_ACTIONS.get(key, None)
 
 
 class InputHandler:
-    def __init__(self) -> None:
-        self.active: bool = False
-        self.buf: str = ""
-        self.action: str = ""
-        self.step: int = 0  # for multi-step actions like "a" (add)
-        self.hash: str = ""  # stashed hash during add flow
+    def __init__(self, app_ctx: AppContext):
+        self.app_context = app_ctx
+
+        self.sequence: Iterable[str] = []
+        self.input: str | None = None
+        self.input_context_name: str | None = None
+        self.context: dict[str, str] = {}
 
     def prompt(self, num_changes: int) -> str:
-        """Build prompt string for current input state."""
-        if not self.active:
+        if len(self.sequence) == 0:
             return ""
-        if self.action == "a":
-            if self.step == 1:
-                return f"Add change — paste commit hash: {self.buf}_  [ESC=cancel]"
-            else:
-                return f"Host (Enter=default, #=copy from row, or type): {self.buf}_  [ESC=cancel]"
-        if self.action == "w":
-            label = "Toggle waiting"
-        elif self.action == "d":
-            label = "Toggle disabled"
-        elif self.action == "o":
-            label = "Open change in web UI"
-        elif self.action == "s":
-            label = "Set Automerge=+1"
-        else:
-            label = "Toggle deleted"
-        hint = f"{label} — enter row # (1-{num_changes}): {self.buf}_  [ESC=cancel]"
-        if self.action == "x" and not self.buf:
-            hint += "  [a=all submitted  x=purge deleted  r=restore all]"
-        return hint
 
-    def handle_key(self, key: str, ctx: AppContext) -> None:
-        """Process a single keypress. Delegates to action-specific methods."""
-        if not self.active:
-            self._handle_inactive(key, ctx)
-        elif key == "ESC":
-            self._reset()
-        elif self.action == "a":
-            self._handle_add(key, ctx)
-        elif self.action == "x" and not self.buf and key in ("a", "x", "r"):
-            self._handle_delete_shortcut(key, ctx)
-        else:
-            self._handle_row_action(key, ctx)
+        if self.input is not None:
+            hint = PROMPTS_FOR_LAST_KEY.get(self.sequence[-1])
+            hint += f": {self.input_context_name}: {self.input}_ [ESC=cancel]"
+            # TODO: hints aboud special characters
+            # hint += "  [a=all submitted  x=purge deleted  r=restore all]"
+            return hint
 
-    def _handle_inactive(self, key: str, ctx: AppContext) -> None:
-        """Handle keypress when no action is active (top-level bindings)."""
-        if key == "w":
-            self.active = True
-            self.buf = ""
-            self.action = "w"
-        elif key == "x":
-            self.active = True
-            self.buf = ""
-            self.action = "x"
-        elif key == "d":
-            self.active = True
-            self.buf = ""
-            self.action = "d"
-        elif key == "a":
-            self.active = True
-            self.buf = ""
-            self.action = "a"
-            self.step = 1
-            self.hash = ""
-        if key == "o":
-            self.active = True
-            self.buf = ""
-            self.action = "o"
-        if key == "s":
-            self.active = True
-            self.buf = ""
-            self.action = "s"
-        elif key == "r":
-            ctx.refresh_all()
-        elif key == "q":
-            ctx.quit()
+        return PROMPTS_FOR_LAST_KEY.get(self.sequence[-1])
 
-    def _handle_add(self, key: str, ctx: AppContext) -> None:
-        """Handle keypress during add-change flow."""
-        if key in ("\r", "\n"):
-            if self.step == 1:
-                # Hash submitted — move to host step
-                if not self.buf.strip():
-                    ctx.status_msg = "[red]Hash cannot be empty[/red]"
-                    self._reset()
-                else:
-                    self.hash = self.buf.strip()
-                    self.buf = ""
-                    self.step = 2
-            else:
-                # Host submitted — resolve and add
-                commit_hash = self.hash
-                if not self.buf.strip():
-                    # Empty -> use default_host
-                    if ctx.default_host:
-                        host = ctx.default_host
-                    else:
-                        ctx.status_msg = "[red]No default_host set in config[/red]"
-                        self._reset()
-                        return
-                elif self.buf.strip().isdigit():
-                    # Number -> copy host from that row
-                    row_num = int(self.buf.strip())
-                    if 1 <= row_num <= len(ctx.changes):
-                        host = ctx.changes[row_num - 1].host
-                    else:
-                        ctx.status_msg = f"[red]Invalid row: {self.buf.strip()}[/red]"
-                        self._reset()
-                        return
-                else:
-                    # Literal hostname
-                    host = self.buf.strip()
-                ctx.add_change(commit_hash, host)
-                self._reset()
-        elif key in ("\x7f", "\x08"):
-            self.buf = self.buf[:-1]
-        elif key.isprintable() and key not in ("", "ESC"):
-            self.buf += key
+    def handle_key(self, key: str) -> None:
+        if key == "<esc>":
+            self.reset()
+            return
 
-    def _handle_row_action(self, key: str, ctx: AppContext) -> None:
-        """Handle keypress during w/d/x row-number entry."""
-        if key in ("\r", "\n"):
-            if self.buf.isdigit():
-                row_num = int(self.buf)
-                if 1 <= row_num <= len(ctx.changes):
-                    if self.action == "w":
-                        ctx.toggle_waiting(row_num)
-                    elif self.action == "x":
-                        ctx.toggle_deleted(row_num)
-                    elif self.action == "d":
-                        ctx.toggle_disabled(row_num)
-                    elif self.action == "o":
-                        ctx.open_change_webui(row_num)
-                    elif self.action == "s":
-                        ctx.set_automerge(row_num)
-                else:
-                    ctx.status_msg = f"[red]Invalid row: {self.buf}[/red]"
-            else:
-                ctx.status_msg = f"[red]Invalid input: {self.buf}[/red]"
-            self._reset()
-        elif key in ("\x7f", "\x08"):
-            self.buf = self.buf[:-1]
-        elif key.isdigit():
-            self.buf += key
+        self.handle_input(key)
 
-    def _handle_delete_shortcut(self, key: str, ctx: AppContext) -> None:
-        """Handle x-mode shortcuts (a=all submitted, x=purge, r=restore)."""
-        if key == "a":
-            ctx.delete_all_submitted()
-        elif key == "x":
-            ctx.purge_deleted()
-        elif key == "r":
-            ctx.restore_all()
-        self._reset()
+        if self.input is not None:
+            return
 
-    def _reset(self) -> None:
-        """Clear input state back to inactive."""
-        self.active = False
-        self.buf = ""
-        self.action = ""
-        self.step = 0
-        self.hash = ""
+        if not key_allowed_in_sequence(key, self.sequence):
+            self.app_context.status_msg = f"key not allowed in sequence : {key} {self.sequence}"
+            return
+
+        if key != "<enter>":
+            self.sequence.append(key)
+
+        action = match_action(self.sequence[-1])
+
+        if action is None:
+            return
+
+        for required_input in action.required_inputs:
+            if required_input not in self.context:
+                self.input = ""
+                self.input_context_name = required_input
+                return
+
+        action.action(self.app_context, self.context)
+
+        self.reset()
+
+    def reset(self) -> None:
+        self.input = None
+        self.input_context_name = None
+        self.sequence = []
+        self.context = {}
+
+    def handle_input(self, key: str) -> None:
+        if self.input is None:
+            return
+
+        if key == "<enter>":
+            self.context[self.input_context_name] = self.input
+            self.input = None
+            self.input_context_name = None
+            return
+
+        if key == "<bs>":
+            self.input = self.input[:-1]
+            return
+
+        self.input += key
