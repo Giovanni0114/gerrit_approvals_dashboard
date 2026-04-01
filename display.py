@@ -9,18 +9,18 @@ from models import Change
 
 class Approval:
     def __init__(self, appr: dict) -> None:
-        self.label = appr.get("type", "?")
-        self.by = appr.get("by", {}).get("name", "")
-        self.value = appr.get("value", "")
+        self.label: str = appr.get("type", "?")
+        self.by: str = appr.get("by", {}).get("name", "")
+        self.value: str = appr.get("value", "")
 
 
-def get_approvals_list(approvals: list[dict]) -> Iterable[Approval]:
-    approvals = [Approval(a) for a in approvals]
-    submitted = [appr for appr in approvals if appr.label == "SUBM"]
+def get_approvals_list(approvals: list[dict]) -> list[Approval]:
+    approval_objs: list[Approval] = [Approval(a) for a in approvals]
+    submitted: list[Approval] = [appr for appr in approval_objs if appr.label == "SUBM"]
     if submitted:
         return submitted
 
-    return approvals
+    return approval_objs
 
 
 def format_value(value_str: str) -> Text:
