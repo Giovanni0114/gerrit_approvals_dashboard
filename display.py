@@ -89,32 +89,29 @@ def build_table(
         row_styles=["", "on #1a1a2e"],
         pad_edge=False,
     )
-    table.add_column("idx", style="dim", no_wrap=True, width=3)
-    table.add_column("Number", style="magenta", no_wrap=True)
-    table.add_column("Commit", style="cyan", no_wrap=True)
+    table.add_column("idx", style="dim", no_wrap=True, width=2)
+    table.add_column("Number", style="magenta", no_wrap=True, width=6)
     table.add_column("Subject", max_width=60)
     table.add_column("Project", no_wrap=True)
-    table.add_column("Approvals")
+    table.add_column("Approvals", no_wrap=False, ratio=40)
 
     if prompt_msg:
-        table.add_row("", "", "", Text(prompt_msg, style="bold yellow"), "", "")
+        table.add_row("", "", Text(prompt_msg, style="bold yellow"), "", "")
 
     for idx, ch in enumerate(changes, 1):
         styles = {
             "idx": "dim",
             "number": "magenta",
-            "commit": "cyan",
             "subject": "",
             "project": "",
             "approvals": "",
             "row": "",
         }
 
-        short_commit = ch.hash[:7]
         data = results.get((ch.host, ch.hash), {})
 
         if "error" in data:
-            table.add_row(str(idx), "", short_commit, Text(data["error"], style="red"), "", "")
+            table.add_row(str(idx), "", Text(data["error"], style="red"), "", "")
             continue
 
         url = data.get("url", None)
@@ -145,7 +142,6 @@ def build_table(
 
         if ch.deleted:
             styles["subject"] += " strike dim"
-            styles["commit"] += " dim"
             styles["project"] += " dim"
             styles["row"] = " on #1c1c1c"
 
@@ -153,7 +149,6 @@ def build_table(
 
         elif ch.disabled:
             styles["subject"] += " dim italic"
-            styles["commit"] += " dim"
             styles["project"] += " dim"
             styles["row"] = "on #1c1c1c"
 
@@ -165,7 +160,6 @@ def build_table(
         table.add_row(
             Text(str(idx), style=styles["idx"]),
             Text(number_text, style=styles["number"]),
-            Text(short_commit, style=styles["commit"]),
             Text(subject_text, style=styles["subject"]),
             Text(project_text, style=styles["project"]),
             approvals_text,
