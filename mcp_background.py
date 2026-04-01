@@ -63,6 +63,21 @@ class BackgroundMCPServer:
     async def _get_changes(self):
         payload = []
         for ch in self.ctx.get_changes():
-            payload.append(f"{ch.host}: {ch.hash}")
-
+            if ch.deleted or ch.disabled:
+                continue
+            payload.append(
+                {
+                    "host": ch.host,
+                    "hash": ch.hash,
+                    "waiting": ch.waiting,
+                    "disabled": ch.disabled,
+                    "deleted": ch.deleted,
+                    "submitted": ch.submitted,
+                    "subject": ch.subject,
+                    "number": ch.number,
+                    "project": ch.project,
+                    "url": ch.url,
+                    "approvals": [{"type": a.label, "value": a.value, "by": a.by} for a in ch.approvals],
+                }
+            )
         return {"changes": payload}

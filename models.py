@@ -1,24 +1,45 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable, Protocol, runtime_checkable
 
 
 @dataclass
-class Change:
+class ApprovalEntry:
+    label: str
+    value: str
+    by: str
+
+
+@dataclass
+class TrackedChange:
+    # --- Persisted to config file ---
     host: str
     hash: str
     waiting: bool = False
-    deleted: bool = False
     disabled: bool = False
+
+    # --- In-memory only (not saved to config) ---
+    deleted: bool = False
+
+    # --- Remote data from Gerrit SSH (None = not yet fetched) ---
+    number: int | None = None
+    subject: str | None = None
+    project: str | None = None
+    url: str | None = None
+    submitted: bool = False
+    approvals: list[ApprovalEntry] = field(default_factory=list)
+    error: str | None = None
+
+    # --- Internal: approval snapshot for change-detection ---
+    _snapshot: frozenset[tuple[str, str, str]] = field(default_factory=frozenset, repr=False, compare=False)
 
 
 @runtime_checkable
 class AppContext(Protocol):
-    changes: list[Change]
+    changes: list[TrackedChange]
     status_msg: str
     default_host: str | None
-    submitted_keys: set[tuple[str, str]]
 
-    def get_changes(self) -> Iterable[Change]: ...
+    def get_changes(self) -> Iterable[TrackedChange]: ...
     def toggle_waiting(self, row: int) -> None: ...
     def toggle_deleted(self, row: int) -> None: ...
     def toggle_disabled(self, row: int) -> None: ...

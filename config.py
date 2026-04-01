@@ -1,12 +1,13 @@
 import json
 from pathlib import Path
+from typing import Literal
 
-from models import Change
+from models import TrackedChange
 
 DEFAULT_INTERVAL = 30
 
 
-def load_config(path: Path) -> tuple[list[Change], int, str | None]:
+def load_config(path: Path) -> tuple[list[TrackedChange], int, str | None]:
     data = json.loads(path.read_text())
     interval = int(data.get("interval", DEFAULT_INTERVAL))
     if interval < 1:
@@ -19,7 +20,7 @@ def load_config(path: Path) -> tuple[list[Change], int, str | None]:
         if not host:
             raise ValueError(f"Change '{commit_hash}' has no host and no default_host is set")
         changes.append(
-            Change(
+            TrackedChange(
                 host=host,
                 hash=commit_hash,
                 waiting=bool(entry.get("waiting", False)),
@@ -48,10 +49,10 @@ def generate_example_config(path: Path) -> None:
     path.write_text(json.dumps(example, indent=2) + "\n")
 
 
-def update_config_field(path: Path, commit_hash: str, field: str, value: object) -> float:
+def update_config_field(path: Path, commit_hash: str, field: Literal["waiting", "disabled"], value: bool) -> float:
     """Set field=value for the entry matching commit_hash. Returns new mtime.
 
-    Only used for 'waiting' and 'disabled' fields (NOT 'deleted' which is in-memory only).
+    Only 'waiting' and 'disabled' are persisted. 'deleted' is in-memory only.
     """
     data = json.loads(path.read_text())
     for entry in data.get("changes", []):
@@ -70,10 +71,7 @@ def add_change_to_config(path: Path, commit_hash: str, host: str) -> float:
 
 
 def remove_changes_from_config(path: Path, hashes: set[str]) -> float:
-    """Remove entries matching hashes from config file. Returns new mtime.
-
-    Caller is responsible for also cleaning up in-memory caches (results, prev_approvals).
-    """
+    """Remove entries matching hashes from config file. Returns new mtime."""
     data = json.loads(path.read_text())
     data["changes"] = [e for e in data.get("changes", []) if e.get("hash") not in hashes]
     path.write_text(json.dumps(data, indent=2) + "\n")

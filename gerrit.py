@@ -5,6 +5,7 @@ import threading
 _ssh_lock = threading.Lock()
 ssh_request_count: int = 0
 
+
 def query_set_automerge(commit_hash: str, host: str) -> dict:
     global ssh_request_count
     with _ssh_lock:
@@ -59,17 +60,6 @@ def query_approvals(commit_hash: str, host: str) -> dict:
         return {"error": "SSH timeout"}
     except (json.JSONDecodeError, IndexError) as exc:
         return {"error": str(exc)}
-
-
-def approval_snapshot(data: dict) -> frozenset[tuple[str, str, str]]:
-    """Return a fingerprint of the current approvals for change-detection."""
-    patch_sets = data.get("patchSets", [])
-    if not patch_sets:
-        return frozenset()
-    approvals = patch_sets[-1].get("approvals", [])
-    return frozenset(
-        (appr.get("type", ""), appr.get("value", ""), appr.get("by", {}).get("name", "")) for appr in approvals
-    )
 
 
 def is_submitted(data: dict) -> bool:

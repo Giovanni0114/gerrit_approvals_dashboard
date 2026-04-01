@@ -4,23 +4,12 @@ from typing import Iterable
 from rich.table import Table
 from rich.text import Text
 
-from models import Change
+from models import ApprovalEntry, TrackedChange
 
 
-class Approval:
-    def __init__(self, appr: dict) -> None:
-        self.label: str = appr.get("type", "?")
-        self.by: str = appr.get("by", {}).get("name", "")
-        self.value: str = appr.get("value", "")
-
-
-def get_approvals_list(approvals: list[dict]) -> list[Approval]:
-    approval_objs: list[Approval] = [Approval(a) for a in approvals]
-    submitted: list[Approval] = [appr for appr in approval_objs if appr.label == "SUBM"]
-    if submitted:
-        return submitted
-
-    return approval_objs
+def get_approvals_list(ch: TrackedChange) -> list[ApprovalEntry]:
+    submitted = [a for a in ch.approvals if a.label == "SUBM"]
+    return submitted if submitted else ch.approvals
 
 
 def format_value(value_str: str) -> Text:
@@ -39,7 +28,7 @@ def format_value(value_str: str) -> Text:
     return Text(str(v), style="bold red")
 
 
-def approvals_to_text(approvals: Iterable[Approval]) -> Text:
+def approvals_to_text(approvals: Iterable[ApprovalEntry]) -> Text:
     approvals_text = Text()
 
     for appr in approvals:
@@ -56,8 +45,7 @@ def approvals_to_text(approvals: Iterable[Approval]) -> Text:
 
 
 def build_table(
-    changes: list[Change],
-    results: dict[tuple[str, str], dict],
+    changes: list[TrackedChange],
     config_path: str,
     interval: float,
     status_msg: str = "",
@@ -108,24 +96,20 @@ def build_table(
             "row": "",
         }
 
-        data = results.get((ch.host, ch.hash), {})
-
-        if "error" in data:
-            table.add_row(str(idx), "", Text(data["error"], style="red"), "", "")
+        if ch.error:
+            table.add_row(str(idx), "", Text(ch.error, style="red"), "", "")
             continue
 
-        url = data.get("url", None)
-        if url:
-            styles["number"] += f" link {url}"
+        if ch.url:
+            styles["number"] += f" link {ch.url}"
 
-        number_text = str(data.get("number", "<unknown>"))
-        subject_text = data.get("subject", "<unknown>")
-        project_text = data.get("project", "<unknown>")
+        number_text = str(ch.number) if ch.number is not None else "<unknown>"
+        subject_text = ch.subject or "<unknown>"
+        project_text = ch.project or "<unknown>"
         approvals_text = Text()
 
-        patch_sets = data.get("patchSets", [])
-        if patch_sets:
-            approvals = get_approvals_list(patch_sets[-1].get("approvals", []))
+        if ch.approvals:
+            approvals = get_approvals_list(ch)
             approvals_text = approvals_to_text(approvals)
             approvals_text.style = styles["approvals"]
 

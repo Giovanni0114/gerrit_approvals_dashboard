@@ -20,22 +20,21 @@ from config import (
     update_config_field,
 )
 from display import build_table
-from gerrit import approval_snapshot, is_submitted, query_approvals
+from gerrit import is_submitted, query_approvals
 from input_handler import InputHandler
-from models import Change
+from models import ApprovalEntry, TrackedChange
 from utils import AtomicCounter, NoEcho
 
 
 class App:
-    def __init__(self, config_path: Path, changes: list[Change], interval: int, default_host: str | None) -> None:
+    def __init__(
+        self, config_path: Path, changes: list[TrackedChange], interval: int, default_host: str | None
+    ) -> None:
         self.config_path = config_path
         self.console = Console()
         self.changes = changes
         self.interval = interval
         self.default_host = default_host
-        self.results: dict[tuple[str, str], dict] = {}
-        self.submitted_keys: set[tuple[str, str]] = set()
-        self.prev_approvals: dict[tuple[str, str], frozenset[tuple[str, str, str]]] = {}
         self.last_mtime: float = config_mtime(config_path)
         self.status_msg: str = ""
         self.running: bool = True
@@ -53,55 +52,64 @@ class App:
     def do_queries(self) -> None:
         """Run SSH queries for all non-submitted, non-deleted, non-disabled changes."""
         self.status_msg = ""
-        pending = [
-            ch
-            for ch in self.changes
-            if (ch.host, ch.hash) not in self.submitted_keys and not ch.deleted and not ch.disabled
-        ]
+        pending = [ch for ch in self.changes if not ch.submitted and not ch.deleted and not ch.disabled]
 
-        def _query(ch: Change) -> tuple[tuple[str, str], dict]:
-            return (ch.host, ch.hash), query_approvals(ch.hash, ch.host)
+        def _query(ch: TrackedChange) -> tuple[TrackedChange, dict]:
+            return ch, query_approvals(ch.hash, ch.host)
 
         with ThreadPoolExecutor(max_workers=len(pending) or 1) as pool:
-            for key, data in pool.map(_query, pending):
-                self.results[key] = data
-
+            for ch, data in pool.map(_query, pending):
                 if "patchSets" in data:
                     latest_rev = data.get("patchSets")[-1].get("revision", "<no rev>")
-                    if latest_rev != key[1] and not latest_rev.startswith(key[1]):
-                        self.status_msg += f"[orange]Warning: latest patchset mismatch for {key[0]}"
-                        self.status_msg += f" - {key[1][:7]} vs {latest_rev}[/orange]\n"
-
-                if "error" not in data and is_submitted(data):
-                    self.submitted_keys.add(key)
-
-                if "error" not in data:
-                    snapshot = approval_snapshot(data)
-                    ch = next(c for c in self.changes if (c.host, c.hash) == key)
-                    if ch.waiting and key in self.prev_approvals and snapshot != self.prev_approvals[key]:
-                        ch.waiting = False
-                        try:
-                            self.last_mtime = update_config_field(self.config_path, ch.hash, "waiting", False)
-                        except OSError:
-                            pass
-                    self.prev_approvals[key] = snapshot
+                    if latest_rev != ch.hash and not latest_rev.startswith(ch.hash):
+                        self.status_msg += f"[orange]Warning: latest patchset mismatch for {ch.host}"
+                        self.status_msg += f" - {ch.hash[:7]} vs {latest_rev}[/orange]\n"
+                self._store_result(ch, data)
 
     def query_disabled_once(self) -> None:
         """One-shot query for disabled changes that have no cached data yet."""
-        need = [ch for ch in self.changes if ch.disabled and (ch.host, ch.hash) not in self.results]
+        need = [ch for ch in self.changes if ch.disabled and ch.number is None]
         if not need:
             return
 
-        def _query(ch: Change) -> tuple[tuple[str, str], dict]:
-            return (ch.host, ch.hash), query_approvals(ch.hash, ch.host)
+        def _query(ch: TrackedChange) -> tuple[TrackedChange, dict]:
+            return ch, query_approvals(ch.hash, ch.host)
 
         with ThreadPoolExecutor(max_workers=len(need)) as pool:
-            for key, data in pool.map(_query, need):
-                self.results[key] = data
+            for ch, data in pool.map(_query, need):
+                self._store_result(ch, data)
+
+    def _store_result(self, ch: TrackedChange, data: dict) -> None:
+        """Parse raw Gerrit SSH response dict into typed fields on ch."""
+        if "error" in data:
+            ch.error = data["error"]
+            return
+        ch.error = None
+        ch.number = data.get("number")
+        ch.subject = data.get("subject")
+        ch.project = data.get("project")
+        ch.url = data.get("url")
+        patch_sets = data.get("patchSets", [])
+        if patch_sets:
+            raw = patch_sets[-1].get("approvals", [])
+            ch.approvals = [
+                ApprovalEntry(a.get("type", "?"), a.get("value", ""), a.get("by", {}).get("name", "")) for a in raw
+            ]
+        else:
+            ch.approvals = []
+        new_snapshot = frozenset((a.label, a.value, a.by) for a in ch.approvals)
+        if ch.waiting and ch._snapshot and new_snapshot != ch._snapshot:
+            ch.waiting = False
+            try:
+                self.last_mtime = update_config_field(self.config_path, ch.hash, "waiting", False)
+            except OSError:
+                pass
+        ch._snapshot = new_snapshot
+        ch.submitted = is_submitted(data)
 
     def set_automerge(self, row: int) -> None:
         ch = self.changes[row - 1]
-        if (ch.host, ch.hash) not in self.results:
+        if ch.number is None:
             self.status_msg = f"[red]cannot set automerge for change #{row}[/red]"
             return
 
@@ -127,11 +135,6 @@ class App:
             self.default_host = new_default_host
             self.last_mtime = mtime
 
-            valid_keys = {(ch.host, ch.hash) for ch in self.changes}
-            for k in list(self.results):
-                if k not in valid_keys:
-                    del self.results[k]
-
             self.status_msg = "[green]Config reloaded[/green]"
             return True
         except (json.JSONDecodeError, KeyError, ValueError) as exc:
@@ -145,7 +148,6 @@ class App:
         """Build the display table from cached results."""
         return build_table(
             self.changes,
-            self.results,
             str(self.config_path),
             self.interval,
             self.status_msg,
@@ -161,7 +163,7 @@ class App:
 
     def toggle_waiting(self, row: int) -> None:
         ch = self.changes[row - 1]
-        if (ch.host, ch.hash) in self.submitted_keys:
+        if ch.submitted:
             self.status_msg = f"[dim]#{row} already submitted[/dim]"
         elif ch.waiting:
             ch.waiting = False
@@ -225,7 +227,7 @@ class App:
                     return
 
     def add_change(self, commit_hash: str, host: str) -> None:
-        new_change = Change(host=host, hash=commit_hash)
+        new_change = TrackedChange(host=host, hash=commit_hash)
         self.changes.append(new_change)
         try:
             self.last_mtime = add_change_to_config(self.config_path, commit_hash, host)
@@ -236,7 +238,7 @@ class App:
     def delete_all_submitted(self) -> None:
         count = 0
         for ch in self.changes:
-            if (ch.host, ch.hash) in self.submitted_keys and not ch.deleted:
+            if ch.submitted and not ch.deleted:
                 ch.deleted = True
                 count += 1
         if count:
@@ -252,14 +254,6 @@ class App:
             except OSError:
                 pass
             self.changes[:] = [ch for ch in self.changes if not ch.deleted]
-            # Clean up stale caches
-            valid_keys = {(ch.host, ch.hash) for ch in self.changes}
-            for k in list(self.results):
-                if k not in valid_keys:
-                    del self.results[k]
-            for k in list(self.prev_approvals):
-                if k not in valid_keys:
-                    del self.prev_approvals[k]
             self.status_msg = f"[red]{len(deleted_hashes)} change(s) permanently removed[/red]"
         else:
             self.status_msg = "[dim]Nothing to purge[/dim]"
@@ -313,7 +307,7 @@ class App:
 
     # --- MCP helpers ---
 
-    def get_changes(self) -> Iterable[Change]:
+    def get_changes(self) -> Iterable[TrackedChange]:
         return self.changes
 
     # --- Opem WebUI ---
@@ -321,11 +315,11 @@ class App:
     def open_change_webui(self, row: int) -> None:
         ch = self.changes[row - 1]
 
-        if (ch.host, ch.hash) not in self.results:
+        if ch.number is None:
             self.status_msg = f"[red]cannot open change #{row}[/red]"
             return
 
-        url = self.results[(ch.host, ch.hash)].get("url")
+        url = ch.url
         if url:
             webbrowser.open(url)
             self.status_msg = f"[green]opened change #{row} in browser[/green]"
