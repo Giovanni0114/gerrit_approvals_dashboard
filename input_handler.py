@@ -200,10 +200,14 @@ class InputHandler:
     def hints(self) -> str:
         """Return keyboard shortcut hints for the current input state."""
         if not self.sequence or self.sequence[0] != " ":
-            return "[bold]q[/] quit  [bold]r[/] refresh  [bold]Space[/] Changes"
+            return "[bold]Space[/] Changes  [bold]q[/] quit  [bold]r[/] refresh"
         return (
-            "[bold]a[/] add  [bold]w[/] wait  [bold]d[/] disable  "
-            "[bold]x[/] delete  [bold]o[/] open  [bold]s[/] automerge"
+            "[bold]a[/] add  "
+            "[bold]w[/] wait  "
+            "[bold]d[/] disable  "
+            "[bold]x[/] delete  "
+            "[bold]o[/] open  "
+            "[bold]s[/] automerge"
         )
 
     def prompt(self, num_changes: int) -> str:
