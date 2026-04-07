@@ -12,13 +12,15 @@ inside the EPIC folder.
 
 ---
 
-## 001 | Split config and changes storage
+## 001 | Split config and changes storage — **DONE**
 
 The single `approvals.json` mixes app configuration with the tracked changes list.
 I want a separate config file (TOML format) for settings like interval, hosts, and
 default options, and a separate JSON file just for the changes.
 
-## 002 | Automatically pull all unmerged changes owned by the user
+---
+
+## 002 | Automatically pull all unmerged changes owned by the user — **DONE**
 
 If we have an owner email we can query Gerrit for all open changes and add them
 automatically instead of adding hashes one by one.
@@ -29,6 +31,8 @@ ssh -p 29418 giovanni@localhost gerrit query --format json owner:$EMAIL is:open
 
 The email should default to `git config user.email` but also be configurable in
 the config file.
+
+---
 
 ## 003 | Gerrit server instances in config
 
@@ -41,12 +45,16 @@ instances section in the config where each instance defines a Gerrit server:
 The first defined instance is the default. When adding a change interactively, a
 numbered list of instances is shown and the user picks one.
 
-## 004 | Move input field above the table
+---
+
+## 004 | Move input field above the table — **DONE**
 
 The input field used for operations is currently rendered inside the table.
 It should move above the table but below the header.
 
-## 005 | Add `comments` field for change
+---
+
+## 005 | Add `comments` field for change — **IN PROGRESS** (branch: feature/005-comments)
 
 Users should be able to attach short notes to individual changes. Comments are
 persisted in the changes file and displayed in the table.
@@ -61,7 +69,7 @@ Keybindings:
 For now cursor movement inside the input is not required — only appending and
 backspace deletion.
 
-## 006 | Track latest patchset hash per change
+## 006 | Track latest patchset hash per change — **IN PROGRESS** (branch: feature/006-track-patchset-hash)
 
 Changes are added by commit hash, but when a new patchset is uploaded the hash
 changes. This causes a mismatch warning and means operations like `gerrit review`
@@ -147,6 +155,8 @@ No point speccing this in detail before those land.
 ### EPIC002-002 | Expose review operations over MCP
 
 
+---
+
 ## 007 | Some indexes should support more advanced notation
 
 For operations that's resonable for such operations giving index shouyld support ranges such as:
@@ -157,10 +167,13 @@ For operations that's resonable for such operations giving index shouyld support
 whitespaces should be ignored
 notation can be combined so "1-2, 3-5, 11, 23" is correct expression.
 
+---
+
 ## 008 | BUG - invalid index should not crash app
 
 when index not inb range is used the app is crashed
 
+---
 
 ## 009 | Add keybind to open config/approvals in default editor
 
