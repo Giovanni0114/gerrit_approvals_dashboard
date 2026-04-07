@@ -1,6 +1,8 @@
 from datetime import datetime
 from typing import Iterable
 
+from rich.console import Group
+from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
@@ -49,17 +51,18 @@ def build_table(
     config_path: str,
     interval: float,
     status_msg: str = "",
-    prompt_msg: str = "",
     ssh_requests: int = 0,
     hints: str = "",
 ) -> Table:
-    caption = f"[dim]config:[/dim] {config_path} | [dim]interval:[/dim] {interval}s \n{hints}"
+    caption = f"[dim]config:[/dim] {config_path} | [dim]interval:[/dim] {interval}s"
+
+    if hints:
+        caption = f"{caption}\n{hints}"
 
     if status_msg:
         caption = f"{status_msg}\n{caption}"
 
     table = Table(
-        title=f"Gerrit Approvals  (refreshed {datetime.now():%H:%M:%S})  ssh requests: {ssh_requests}",
         caption=caption,
         expand=True,
         box=None,
@@ -72,9 +75,6 @@ def build_table(
     table.add_column("Subject", max_width=60)
     table.add_column("Project", no_wrap=True)
     table.add_column("Approvals", no_wrap=False, ratio=40)
-
-    if prompt_msg:
-        table.add_row("", "", Text(prompt_msg, style="bold yellow"), "", "")
 
     for idx, ch in enumerate(changes, 1):
         styles = {
@@ -141,3 +141,41 @@ def build_table(
         )
 
     return table
+
+
+def build_header(ssh_requests: int = 0) -> Panel:
+    """Build a header Panel with timestamp and SSH request count.
+
+    Args:
+        ssh_requests: Number of SSH requests made.
+
+    Returns:
+        A Panel with centered header information.
+    """
+    header_text = f"Gerrit Approvals  (refreshed {datetime.now():%H:%M:%S})  ssh requests: {ssh_requests}"
+    centered_text = Text(header_text, justify="center")
+    return Panel(centered_text, expand=True, style="")
+
+
+def build_layout(header: Panel, table: Table, prompt: str | None) -> Group:
+    """Compose a layout with header, optional prompt, and table.
+
+    Args:
+        header: The header Panel.
+        table: The data table to display (includes hints in caption at bottom).
+        prompt: Optional prompt message (if empty or None, not included).
+
+    Returns:
+        A Group containing (in order):
+        - Header Panel
+        - Prompt text (only if non-empty)
+        - Table (with hints in caption at bottom)
+    """
+    renderables: list = [header]
+
+    if prompt:
+        renderables.append(Text.from_markup(prompt, style="bold yellow"))
+
+    renderables.append(table)
+
+    return Group(*renderables)

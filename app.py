@@ -7,9 +7,8 @@ from queue import Empty, Queue
 from threading import Event, Lock, Thread
 from typing import Iterable
 
-from rich.console import Console
+from rich.console import Console, Group
 from rich.live import Live
-from rich.table import Table
 
 import gerrit
 from config import (
@@ -21,7 +20,7 @@ from config import (
     resolve_email,
     update_config_field,
 )
-from display import build_table
+from display import build_header, build_layout, build_table
 from gerrit import is_submitted, query_approvals, query_open_changes
 from input_handler import InputHandler
 from models import ApprovalEntry, TrackedChange
@@ -156,20 +155,21 @@ class App:
 
     # --- Display methods ---
 
-    def build(self, prompt_msg: str = "") -> Table:
-        """Build the display table from cached results."""
-        return build_table(
+    def build(self, prompt_msg: str = "") -> Group:
+        """Build the display layout (header, optional prompt, table with hints in caption)."""
+        header = build_header(ssh_requests=gerrit.ssh_request_count)
+        table = build_table(
             self.changes,
             str(self.config_path),
             self.interval,
             self.status_msg,
-            prompt_msg,
             ssh_requests=gerrit.ssh_request_count,
             hints=self.input.hints(),
         )
+        return build_layout(header, table, prompt=prompt_msg)
 
     def visual_update(self, live: Live) -> None:
-        """Redraw the table using cached results (no SSH queries)."""
+        """Redraw the layout using cached results (no SSH queries)."""
         live.update(self.build(self.input.prompt(len(self.changes))))
 
     # --- AppContext interface (called by InputHandler) ---
