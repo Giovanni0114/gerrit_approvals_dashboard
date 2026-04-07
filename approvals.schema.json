@@ -37,6 +37,14 @@
                         "description": "SSH port for this change, overrides default_port",
                         "minimum": 1,
                         "maximum": 65535
+                    },
+                    "comments": {
+                        "type": "array",
+                        "description": "User-attached notes for this change",
+                        "items": {
+                            "type": "string"
+                        },
+                        "default": []
                     }
                 },
                 "required": ["hash"],

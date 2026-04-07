@@ -31,6 +31,11 @@ class FakeApp:
     fetch_open_changes_called: bool = False
     open_config_in_editor_called: bool = False
     open_approvals_in_editor_called: bool = False
+    added_comments: list[tuple[int, str]] = field(default_factory=list)
+    replaced_comments: list[tuple[int, str]] = field(default_factory=list)
+    edited_comments: list[tuple[int, str]] = field(default_factory=list)
+    deleted_comments: list[tuple[int, int]] = field(default_factory=list)
+    deleted_all_comments: list[int] = field(default_factory=list)
 
     def get_changes(self) -> Iterable[TrackedChange]:
         return iter(self.changes)
@@ -82,6 +87,21 @@ class FakeApp:
 
     def quit(self) -> None:
         self.quit_called = True
+
+    def add_comment(self, row: int, text: str) -> None:
+        self.added_comments.append((row, text))
+
+    def replace_all_comments(self, row: int, text: str) -> None:
+        self.replaced_comments.append((row, text))
+
+    def edit_last_comment(self, row: int, text: str) -> None:
+        self.edited_comments.append((row, text))
+
+    def delete_comment(self, row: int, comment_idx: int) -> None:
+        self.deleted_comments.append((row, comment_idx))
+
+    def delete_all_comments(self, row: int) -> None:
+        self.deleted_all_comments.append(row)
 
 
 @pytest.fixture

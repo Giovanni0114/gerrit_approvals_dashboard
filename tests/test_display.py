@@ -6,10 +6,6 @@ Feature 004: Move input field above the table.
 - Integration: App.build() calls build_layout with table (containing hints in caption)
 """
 
-from datetime import datetime
-from unittest.mock import MagicMock
-
-import pytest
 from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
@@ -17,7 +13,6 @@ from rich.text import Text
 
 from display import build_header, build_layout, build_table
 from models import TrackedChange
-
 
 # ---------------------------------------------------------------------------
 # build_table refactoring (TC-001 to TC-004)

@@ -72,9 +72,10 @@ def build_table(
     )
     table.add_column("idx", style="dim", no_wrap=True, width=2)
     table.add_column("Number", style="magenta", no_wrap=True, width=6)
-    table.add_column("Subject", max_width=60)
     table.add_column("Project", no_wrap=True)
-    table.add_column("Approvals", no_wrap=False, ratio=40)
+    table.add_column("Subject", max_width=60)
+    table.add_column("Comments", no_wrap=False, ratio=50)
+    table.add_column("Approvals", no_wrap=False, ratio=25)
 
     for idx, ch in enumerate(changes, 1):
         styles = {
@@ -84,10 +85,11 @@ def build_table(
             "project": "",
             "approvals": "",
             "row": "",
+            "comments": "",
         }
 
         if ch.error:
-            table.add_row(str(idx), "", Text(ch.error, style="red"), "", "")
+            table.add_row(str(idx), "", Text(ch.error, style="red"), "", "", "")
             continue
 
         if ch.url:
@@ -96,6 +98,9 @@ def build_table(
         number_text = str(ch.number) if ch.number is not None else "<unknown>"
         subject_text = ch.subject or "<unknown>"
         project_text = ch.project or "<unknown>"
+
+        if len(project_text.split("/")) > 2:
+            project_text = "/".join(project_text.split("/")[-2:])
         approvals_text = Text()
 
         if ch.approvals:
@@ -131,11 +136,25 @@ def build_table(
         elif ch.waiting:
             styles["row"] = "dim on #2a2a2a"
 
+        # Build comments text
+        comments_text = Text()
+        if ch.comments:
+            comments_lines = "\n".join(ch.comments)
+            if ch.deleted:
+                comments_text = Text(comments_lines, style="dim strike")
+            elif ch.disabled:
+                comments_text = Text(comments_lines, style="dim italic")
+            elif ch.waiting:
+                comments_text = Text(comments_lines, style="dim")
+            else:
+                comments_text = Text(comments_lines, style=styles["comments"])
+
         table.add_row(
             Text(str(idx), style=styles["idx"]),
             Text(number_text, style=styles["number"]),
-            Text(subject_text, style=styles["subject"]),
             Text(project_text, style=styles["project"]),
+            Text(subject_text, style=styles["subject"]),
+            comments_text,
             approvals_text,
             style=styles["row"],
         )

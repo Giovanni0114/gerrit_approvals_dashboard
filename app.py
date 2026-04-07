@@ -423,6 +423,63 @@ class App:
                 pass
         self.running = False
 
+    def add_comment(self, row: int, text: str) -> None:
+        """Add a comment to a change."""
+        ch = self.changes[row - 1]
+        ch.comments.append(text)
+        try:
+            from config import update_config_comments
+
+            self.changes_mtime = update_config_comments(self.changes_path, ch.hash, ch.comments)
+        except OSError:
+            pass
+
+    def replace_all_comments(self, row: int, text: str) -> None:
+        """Replace all comments with a single comment."""
+        ch = self.changes[row - 1]
+        ch.comments = [text]
+        try:
+            from config import update_config_comments
+
+            self.changes_mtime = update_config_comments(self.changes_path, ch.hash, ch.comments)
+        except OSError:
+            pass
+
+    def edit_last_comment(self, row: int, text: str) -> None:
+        """Edit the last comment on a change."""
+        ch = self.changes[row - 1]
+        if ch.comments:
+            ch.comments[-1] = text
+            try:
+                from config import update_config_comments
+
+                self.changes_mtime = update_config_comments(self.changes_path, ch.hash, ch.comments)
+            except OSError:
+                pass
+
+    def delete_comment(self, row: int, comment_idx: int) -> None:
+        """Delete a specific comment from a change."""
+        ch = self.changes[row - 1]
+        if 0 <= comment_idx < len(ch.comments):
+            ch.comments.pop(comment_idx)
+            try:
+                from config import update_config_comments
+
+                self.changes_mtime = update_config_comments(self.changes_path, ch.hash, ch.comments)
+            except OSError:
+                pass
+
+    def delete_all_comments(self, row: int) -> None:
+        """Delete all comments from a change."""
+        ch = self.changes[row - 1]
+        ch.comments.clear()
+        try:
+            from config import update_config_comments
+
+            self.changes_mtime = update_config_comments(self.changes_path, ch.hash, ch.comments)
+        except OSError:
+            pass
+
     # --- Threading ---
 
     def _key_reader(self) -> None:

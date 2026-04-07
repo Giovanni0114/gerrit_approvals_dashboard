@@ -93,6 +93,7 @@ def load_changes(path: Path, default_host: str | None, default_port: int | None)
                 port=port,
                 waiting=bool(entry.get("waiting", False)),
                 disabled=bool(entry.get("disabled", False)),
+                comments=entry.get("comments", []),
             )
         )
     return changes
@@ -210,5 +211,23 @@ def remove_changes_from_config(path: Path, hashes: set[str]) -> float:
     """Remove entries matching hashes from config file. Returns new mtime."""
     data = json.loads(path.read_text())
     data["changes"] = [e for e in data.get("changes", []) if e.get("hash") not in hashes]
+    path.write_text(json.dumps(data, indent=2) + "\n")
+    return config_mtime(path)
+
+
+def update_config_comments(path: Path, commit_hash: str, comments: list[str]) -> float:
+    """Set comments array for the entry matching commit_hash. Returns new mtime.
+
+    Replaces the entire comments array atomically.
+    """
+    data = json.loads(path.read_text())
+    found = False
+    for entry in data.get("changes", []):
+        if entry.get("hash") == commit_hash:
+            entry["comments"] = comments
+            found = True
+            break
+    if not found:
+        raise ValueError(f"Change '{commit_hash}' not found in config")
     path.write_text(json.dumps(data, indent=2) + "\n")
     return config_mtime(path)
