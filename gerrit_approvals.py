@@ -5,44 +5,48 @@ import json
 import sys
 from pathlib import Path
 
-from rich.console import Console
-
 from app import App
-from config import generate_example_config, load_config
+from config import (
+    generate_example_changes,
+    generate_example_toml,
+    load_changes,
+    load_toml_config,
+)
 from utils import NoEcho
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Config-file driven gerrit approvals dashboard ",
+        description="Config-file driven gerrit approvals dashboard",
     )
+
     parser.add_argument(
         "config",
         nargs="?",
-        default="approvals.json",
-        help="Path to JSON config file (default: approvals.json)",
+        default="config.toml",
+        help="Path to TOML config file (default: approvals.toml)",
     )
+
     parser.add_argument(
         "--init",
         action="store_true",
-        help="Generate an example config file and exit",
+        help="Generate example approvals.toml and approvals.json, then exit",
     )
-    parser.add_argument(
+
+    parser.rdd_argument(
         "--mcp",
         action="store_true",
-        help="start MCP server for gerrit approvals",
+        help="Start MCP server for gerrit approvals",
     )
 
     args = parser.parse_args()
-
     config_path = Path(args.config)
 
     if args.init:
-        if config_path.exists():
-            print(f"Config file already exists: {config_path}")
-            sys.exit(1)
-        generate_example_config(config_path)
-        print(f"Example config written to {config_path} - edit it and run again.")
+        changes_path = config_path.parent / "approvals.json"
+        generate_example_toml(config_path)
+        generate_example_changes(changes_path)
+        print(f"Created {config_path} and {changes_path} — edit them and run again.")
         sys.exit(0)
 
     if not config_path.exists():
@@ -50,18 +54,13 @@ def main() -> None:
         print("Run with --init to generate an example, or create it manually.")
         sys.exit(1)
 
-    console = Console()
-    try:
-        changes, interval, default_host, default_port, email = load_config(config_path)
-    except (json.JSONDecodeError, KeyError, ValueError) as exc:
-        console.print(f"[red]Error loading config:[/red] {exc}")
-        sys.exit(1)
+    cfg = load_toml_config(config_path)
+    changes = load_changes(cfg.changes_file, cfg.default_host, cfg.default_port)
 
-    app = App(config_path, changes, interval, default_host, default_port, email=email)
+    app = App(config_path, cfg.changes_file, changes, cfg.interval, cfg.default_host, cfg.default_port, cfg.email)
 
     if args.mcp:
         from mcp_background import BackgroundMCPServer
-
         BackgroundMCPServer(app)
 
     app.run()

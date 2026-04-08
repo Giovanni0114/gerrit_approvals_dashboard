@@ -1,6 +1,8 @@
 """Tests for config.py — regression guard for JSON load/save functions."""
 
 import json
+import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -8,7 +10,8 @@ import pytest
 from config import (
     add_change_to_config,
     bulk_update_config_field,
-    load_config,
+    load_changes,
+    load_toml_config,
     remove_changes_from_config,
     resolve_email,
     update_config_field,
@@ -27,109 +30,6 @@ def _write_config(tmp_path: Path, data: dict) -> Path:
 
 def _read_config(path: Path) -> dict:
     return json.loads(path.read_text())
-
-
-# ---------------------------------------------------------------------------
-# load_config
-# ---------------------------------------------------------------------------
-
-
-class TestLoadConfig:
-    def test_happy_path(self, tmp_path: Path) -> None:
-        p = _write_config(
-            tmp_path,
-            {
-                "interval": 15,
-                "default_host": "gerrit.example.com",
-                "changes": [
-                    {"hash": "abc", "host": "gerrit.example.com"},
-                    {"hash": "def", "host": "other.host", "waiting": True, "disabled": True},
-                ],
-            },
-        )
-        changes, interval, default_host, _, _ = load_config(p)
-        assert interval == 15
-        assert default_host == "gerrit.example.com"
-        assert len(changes) == 2
-        assert changes[0].hash == "abc"
-        assert changes[0].waiting is False
-        assert changes[0].disabled is False
-        assert changes[1].hash == "def"
-        assert changes[1].waiting is True
-        assert changes[1].disabled is True
-
-    def test_default_interval_used_when_absent(self, tmp_path: Path) -> None:
-        p = _write_config(tmp_path, {"changes": []})
-        _, interval, _, _, _ = load_config(p)
-        assert interval == 30
-
-    def test_interval_below_one_raises(self, tmp_path: Path) -> None:
-        p = _write_config(tmp_path, {"interval": 0, "changes": []})
-        with pytest.raises(ValueError, match="interval"):
-            load_config(p)
-
-    def test_missing_host_no_default_raises(self, tmp_path: Path) -> None:
-        p = _write_config(tmp_path, {"changes": [{"hash": "abc"}]})
-        with pytest.raises(ValueError, match="no host"):
-            load_config(p)
-
-    def test_missing_host_falls_back_to_default_host(self, tmp_path: Path) -> None:
-        p = _write_config(
-            tmp_path,
-            {
-                "default_host": "fallback.gerrit.com",
-                "changes": [{"hash": "abc"}],
-            },
-        )
-        changes, _, _, _, _ = load_config(p)
-        assert changes[0].host == "fallback.gerrit.com"
-
-    def test_no_default_host_returns_none(self, tmp_path: Path) -> None:
-        p = _write_config(tmp_path, {"changes": []})
-        _, _, default_host, _, _ = load_config(p)
-        assert default_host is None
-
-    def test_empty_changes_list(self, tmp_path: Path) -> None:
-        p = _write_config(tmp_path, {"changes": []})
-        changes, _, _, _, _ = load_config(p)
-        assert changes == []
-
-    def test_default_port_applied_to_all_changes(self, tmp_path: Path) -> None:
-        p = _write_config(
-            tmp_path,
-            {
-                "default_port": 29418,
-                "changes": [
-                    {"hash": "abc", "host": "h"},
-                    {"hash": "def", "host": "h"},
-                ],
-            },
-        )
-        changes, _, _, default_port, _ = load_config(p)
-        assert default_port == 29418
-        assert changes[0].port == 29418
-        assert changes[1].port == 29418
-
-    def test_per_change_port_overrides_default(self, tmp_path: Path) -> None:
-        p = _write_config(
-            tmp_path,
-            {
-                "default_port": 29418,
-                "changes": [
-                    {"hash": "abc", "host": "h", "port": 22},
-                    {"hash": "def", "host": "h"},
-                ],
-            },
-        )
-        changes, _, _, _, _ = load_config(p)
-        assert changes[0].port == 22
-        assert changes[1].port == 29418
-
-    def test_no_port_returns_none(self, tmp_path: Path) -> None:
-        p = _write_config(tmp_path, {"changes": [{"hash": "abc", "host": "h"}]})
-        changes, _, _, default_port, _ = load_config(p)
-        assert default_port is None
-        assert changes[0].port is None
 
 
 # ---------------------------------------------------------------------------
@@ -285,7 +185,6 @@ class TestResolveEmail:
 
     def test_email_from_git_fallback(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """TC-002: When config email is None, falls back to git config."""
-        import subprocess
 
         monkeypatch.setattr(
             subprocess,
@@ -296,7 +195,6 @@ class TestResolveEmail:
 
     def test_no_email_available_subprocess_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """TC-003: When config email is None and git fails, returns None."""
-        import subprocess
 
         def _fail(*args, **kwargs):
             raise FileNotFoundError("git not found")
@@ -306,7 +204,6 @@ class TestResolveEmail:
 
     def test_no_email_available_nonzero_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """TC-003 variant: git returns non-zero exit code."""
-        import subprocess
 
         monkeypatch.setattr(
             subprocess,
@@ -317,39 +214,116 @@ class TestResolveEmail:
 
 
 # ---------------------------------------------------------------------------
-# load_config — email field
+# load_toml_config
 # ---------------------------------------------------------------------------
 
 
-class TestLoadConfigEmail:
-    def test_email_returned_as_fifth_element(self, tmp_path: Path) -> None:
-        """TC-016: Config with email returns it as 5th tuple element."""
+def _write_toml(tmp_path: Path, content: str) -> Path:
+    p = tmp_path / "config.toml"
+    p.write_text(content, encoding="utf-8")
+    return p
+
+
+class TestLoadTomlConfig:
+    def test_happy_path(self, tmp_path: Path) -> None:
+        p = _write_toml(
+            tmp_path,
+            "\n".join(["[config]", "interval = 15", 'default_host = "gerrit.example.com"', "default_port = 29418"]),
+        )
+        cfg = load_toml_config(p)
+        assert cfg.interval == 15
+        assert cfg.default_host == "gerrit.example.com"
+        assert cfg.default_port == 29418
+        assert cfg.email is None
+        assert cfg.changes_file == tmp_path / "approvals.json"
+
+    def test_defaults_when_keys_absent(self, tmp_path: Path) -> None:
+        p = _write_toml(tmp_path, "[config]")
+        cfg = load_toml_config(p)
+        assert cfg.interval == 30
+        assert cfg.default_port == 22
+        assert cfg.default_host is None
+        assert cfg.email is None
+        assert cfg.changes_file == (tmp_path / "approvals.json").resolve()
+
+    def test_custom_changes_file(self, tmp_path: Path) -> None:
+        p = _write_toml(tmp_path, '[config]\nchanges_file = "my_changes.json"\n')
+        cfg = load_toml_config(p)
+        assert cfg.changes_file == (tmp_path / "my_changes.json").resolve()
+
+    def test_email_field(self, tmp_path: Path) -> None:
+        p = _write_toml(tmp_path, '[config]\ndefault_email = "alice@example.com"\n')
+        cfg = load_toml_config(p)
+        assert cfg.email == "alice@example.com"
+
+    def test_interval_below_one_raises(self, tmp_path: Path) -> None:
+        p = _write_toml(tmp_path, "[config]\ninterval = 0\n")
+        with pytest.raises(ValueError, match="interval"):
+            load_toml_config(p)
+
+    def test_invalid_toml_raises(self, tmp_path: Path) -> None:
+        p = _write_toml(tmp_path, "interval = [unclosed\n")
+        with pytest.raises(tomllib.TOMLDecodeError):
+            load_toml_config(p)
+
+
+# ---------------------------------------------------------------------------
+# load_changes
+# ---------------------------------------------------------------------------
+
+
+class TestLoadChanges:
+    def test_happy_path(self, tmp_path: Path) -> None:
         p = _write_config(
             tmp_path,
             {
-                "email": "test@example.com",
-                "changes": [{"hash": "abc", "host": "h"}],
+                "changes": [
+                    {"hash": "abc", "host": "gerrit.example.com"},
+                    {"hash": "def", "host": "other.host", "waiting": True, "disabled": True},
+                ]
             },
         )
-        _, _, _, _, email = load_config(p)
-        assert email == "test@example.com"
+        changes = load_changes(p, default_host=None, default_port=22)
+        assert len(changes) == 2
+        assert changes[0].hash == "abc"
+        assert changes[0].host == "gerrit.example.com"
+        assert changes[0].waiting is False
+        assert changes[1].hash == "def"
+        assert changes[1].waiting is True
+        assert changes[1].disabled is True
 
-    def test_no_email_returns_none(self, tmp_path: Path) -> None:
-        """TC-016 variant: Config without email returns None as 5th element."""
-        p = _write_config(tmp_path, {"changes": [{"hash": "abc", "host": "h"}]})
-        _, _, _, _, email = load_config(p)
-        assert email is None
-
-    def test_config_with_email_loads_without_error(self, tmp_path: Path) -> None:
-        """TC-015: Config with email field loads successfully."""
-        p = _write_config(
-            tmp_path,
-            {
-                "email": "test@example.com",
-                "changes": [],
-            },
-        )
-        changes, interval, _, _, email = load_config(p)
-        assert email == "test@example.com"
+    def test_empty_changes_valid(self, tmp_path: Path) -> None:
+        p = _write_config(tmp_path, {"changes": []})
+        changes = load_changes(p, default_host=None, default_port=None)
         assert changes == []
-        assert interval == 30
+
+    def test_host_falls_back_to_default(self, tmp_path: Path) -> None:
+        p = _write_config(tmp_path, {"changes": [{"hash": "abc"}]})
+        changes = load_changes(p, default_host="fallback.gerrit.com", default_port=22)
+        assert changes[0].host == "fallback.gerrit.com"
+
+    def test_missing_host_no_default_raises(self, tmp_path: Path) -> None:
+        p = _write_config(tmp_path, {"changes": [{"hash": "abc"}]})
+        with pytest.raises(ValueError, match="no host"):
+            load_changes(p, default_host=None, default_port=None)
+
+    def test_default_port_applied(self, tmp_path: Path) -> None:
+        p = _write_config(tmp_path, {"changes": [{"hash": "abc", "host": "h"}]})
+        changes = load_changes(p, default_host=None, default_port=29418)
+        assert changes[0].port == 29418
+
+    def test_per_change_port_overrides_default(self, tmp_path: Path) -> None:
+        p = _write_config(tmp_path, {"changes": [{"hash": "abc", "host": "h", "port": 22}]})
+        changes = load_changes(p, default_host=None, default_port=29418)
+        assert changes[0].port == 22
+
+    def test_invalid_json_raises(self, tmp_path: Path) -> None:
+        p = tmp_path / "approvals.json"
+        p.write_text("not json", encoding="utf-8")
+        with pytest.raises(json.JSONDecodeError):
+            load_changes(p, default_host=None, default_port=22)
+
+    def test_unknown_field_in_entry_ignored(self, tmp_path: Path) -> None:
+        p = _write_config(tmp_path, {"changes": [{"hash": "abc", "host": "h", "extra": "field"}]})
+        changes = load_changes(p, default_host=None, default_port=22)
+        assert changes[0].hash == "abc"

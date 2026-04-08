@@ -1,28 +1,11 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "title": "Gerrit Approvals Dashboard Config",
-    "description": "Configuration file for gerrit_approvals_config.py",
+    "title": "Gerrit Approvals Dashboard — Changes File",
+    "description": "Tracked changes list for gerrit_approvals_dashboard. Settings live in approvals.toml.",
     "type": "object",
     "properties": {
-        "interval": {
-            "type": "integer",
-            "description": "Refresh interval in seconds",
-            "default": 30,
-            "minimum": 1
-        },
-        "default_host": {
-            "type": "string",
-            "description": "Default host to be used for changes"
-        },
-        "default_port": {
-            "type": "integer",
-            "description": "Default SSH port to be used for changes",
-            "minimum": 1,
-            "maximum": 65535
-        },
-        "email": {
-            "type": "string",
-            "description": "Owner email for fetching open changes. Falls back to git config user.email."
+        "$schema": {
+            "type": "string"
         },
         "changes": {
             "type": "array",
@@ -56,16 +39,11 @@
                         "maximum": 65535
                     }
                 },
-                "required": [
-                    "hash"
-                ],
+                "required": ["hash"],
                 "additionalProperties": false
-            },
-            "minItems": 1
+            }
         }
     },
-    "required": [
-        "changes"
-    ],
+    "required": ["changes"],
     "additionalProperties": false
 }

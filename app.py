@@ -1,4 +1,3 @@
-import json
 import time
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
@@ -15,7 +14,8 @@ from config import (
     add_change_to_config,
     bulk_update_config_field,
     config_mtime,
-    load_config,
+    load_changes,
+    load_toml_config,
     remove_changes_from_config,
     resolve_email,
     update_config_field,
@@ -31,6 +31,7 @@ class App:
     def __init__(
         self,
         config_path: Path,
+        changes_path: Path,
         changes: list[TrackedChange],
         interval: int,
         default_host: str | None,
@@ -38,13 +39,15 @@ class App:
         email: str | None = None,
     ) -> None:
         self.config_path = config_path
+        self.changes_path = changes_path
         self.console = Console()
         self.changes = changes
         self.interval = interval
         self.default_host = default_host
         self.default_port = default_port
         self.email = email
-        self.last_mtime: float = config_mtime(config_path)
+        self.toml_mtime: float = config_mtime(config_path)
+        self.changes_mtime: float = config_mtime(changes_path)
         self.status_msg: str = ""
         self.running: bool = True
         self.key_queue: Queue[str] = Queue()
@@ -110,7 +113,7 @@ class App:
         if ch.waiting and ch._snapshot and new_snapshot != ch._snapshot:
             ch.waiting = False
             try:
-                self.last_mtime = update_config_field(self.config_path, ch.hash, "waiting", False)
+                self.changes_mtime = update_config_field(self.changes_path, ch.hash, "waiting", False)
             except OSError:
                 pass
         ch._snapshot = new_snapshot
@@ -133,24 +136,28 @@ class App:
     # --- Config methods ---
 
     def reload_config(self) -> bool:
-        """Check for config changes and reload if needed. Returns True if reloaded."""
-        mtime = config_mtime(self.config_path)
-        if mtime <= self.last_mtime:
+        """Check both files for changes and reload if needed. Returns True if either was reloaded."""
+        new_toml_mtime = config_mtime(self.config_path)
+        new_changes_mtime = config_mtime(self.changes_path)
+        if new_toml_mtime <= self.toml_mtime and new_changes_mtime <= self.changes_mtime:
             return False
         try:
-            new_changes, new_interval, new_default_host, new_default_port, new_email = load_config(self.config_path)
-            self.changes = new_changes
-            self.interval = new_interval
-            self.default_host = new_default_host
-            self.default_port = new_default_port
-            self.email = new_email
-            self.last_mtime = mtime
+            cfg = load_toml_config(self.config_path)
+            self.interval = cfg.interval
+            self.default_host = cfg.default_host
+            self.default_port = cfg.default_port
+            self.email = cfg.email
+            self.toml_mtime = new_toml_mtime
+
+            self.changes = load_changes(self.changes_path, cfg.default_host, cfg.default_port)
+            self.changes_mtime = new_changes_mtime
 
             self.status_msg = "[green]Config reloaded[/green]"
             return True
-        except (json.JSONDecodeError, KeyError, ValueError) as exc:
+        except Exception as exc:
             self.status_msg = f"[red]Config error: {exc}[/red]"
-            self.last_mtime = mtime
+            self.toml_mtime = new_toml_mtime
+            self.changes_mtime = new_changes_mtime
             return False
 
     # --- Display methods ---
@@ -181,14 +188,14 @@ class App:
         elif ch.waiting:
             ch.waiting = False
             try:
-                self.last_mtime = update_config_field(self.config_path, ch.hash, "waiting", False)
+                self.changes_mtime = update_config_field(self.changes_path, ch.hash, "waiting", False)
             except OSError:
                 pass
             self.status_msg = f"[yellow]#{row} no longer waiting[/yellow]"
         else:
             ch.waiting = True
             try:
-                self.last_mtime = update_config_field(self.config_path, ch.hash, "waiting", True)
+                self.changes_mtime = update_config_field(self.changes_path, ch.hash, "waiting", True)
             except OSError:
                 pass
             self.status_msg = f"[yellow]#{row} marked as waiting[/yellow]"
@@ -206,14 +213,14 @@ class App:
         if ch.disabled:
             ch.disabled = False
             try:
-                self.last_mtime = update_config_field(self.config_path, ch.hash, "disabled", False)
+                self.changes_mtime = update_config_field(self.changes_path, ch.hash, "disabled", False)
             except OSError:
                 pass
             self.status_msg = f"[green]#{row} re-enabled[/green]"
         else:
             ch.disabled = True
             try:
-                self.last_mtime = update_config_field(self.config_path, ch.hash, "disabled", True)
+                self.changes_mtime = update_config_field(self.changes_path, ch.hash, "disabled", True)
             except OSError:
                 pass
             self.status_msg = f"[yellow]#{row} disabled[/yellow]"
@@ -229,7 +236,7 @@ class App:
             ch.waiting = target
         if updates:
             try:
-                self.last_mtime = bulk_update_config_field(self.config_path, updates)
+                self.changes_mtime = bulk_update_config_field(self.changes_path, updates)
             except OSError:
                 pass
         if target:
@@ -248,7 +255,7 @@ class App:
             ch.disabled = target
         if updates:
             try:
-                self.last_mtime = bulk_update_config_field(self.config_path, updates)
+                self.changes_mtime = bulk_update_config_field(self.changes_path, updates)
             except OSError:
                 pass
         if target:
@@ -281,7 +288,7 @@ class App:
         new_change = TrackedChange(host=host, hash=commit_hash)
         self.changes.append(new_change)
         try:
-            self.last_mtime = add_change_to_config(self.config_path, commit_hash, host)
+            self.changes_mtime = add_change_to_config(self.changes_path, commit_hash, host)
         except OSError:
             pass
         self.status_msg = f"[green]Added {commit_hash[:7]} @ {host}[/green]"
@@ -301,7 +308,7 @@ class App:
         deleted_hashes = {ch.hash for ch in self.changes if ch.deleted}
         if deleted_hashes:
             try:
-                self.last_mtime = remove_changes_from_config(self.config_path, deleted_hashes)
+                self.changes_mtime = remove_changes_from_config(self.changes_path, deleted_hashes)
             except OSError:
                 pass
             self.changes[:] = [ch for ch in self.changes if not ch.deleted]
@@ -339,7 +346,7 @@ class App:
                 continue
             host = self.default_host or ""
             try:
-                self.last_mtime = add_change_to_config(self.config_path, commit_hash, host)
+                self.changes_mtime = add_change_to_config(self.changes_path, commit_hash, host)
             except OSError:
                 pass
             self.changes.append(TrackedChange(host=host, hash=commit_hash, port=self.default_port))
@@ -357,7 +364,7 @@ class App:
         deleted_hashes = {ch.hash for ch in self.changes if ch.deleted}
         if deleted_hashes:
             try:
-                remove_changes_from_config(self.config_path, deleted_hashes)
+                remove_changes_from_config(self.changes_path, deleted_hashes)
             except OSError:
                 pass
         self.running = False
