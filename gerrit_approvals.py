@@ -33,7 +33,7 @@ def main() -> None:
         help="Generate example approvals.toml and approvals.json, then exit",
     )
 
-    parser.rdd_argument(
+    parser.add_argument(
         "--mcp",
         action="store_true",
         help="Start MCP server for gerrit approvals",
