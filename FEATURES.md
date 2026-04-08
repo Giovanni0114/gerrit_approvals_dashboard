@@ -69,6 +69,8 @@ Keybindings:
 For now cursor movement inside the input is not required — only appending and
 backspace deletion.
 
+---
+
 ## 006 | Track latest patchset hash per change — **IN PROGRESS** (branch: feature/006-track-patchset-hash)
 
 Changes are added by commit hash, but when a new patchset is uploaded the hash
@@ -175,7 +177,7 @@ when index not inb range is used the app is crashed
 
 ---
 
-## 009 | Add keybind to open config/approvals in default editor
+## 009 | Add keybind to open config/approvals in default editor — **DONE**
 
 This should be implemented after 001 when approvals.json file will be splitd
 
