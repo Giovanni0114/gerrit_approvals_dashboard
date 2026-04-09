@@ -190,3 +190,34 @@ Editor should be configurable, but we should use "EDITOR" env variable by defaul
 After closing editor, config and approvals should be reloaded.
 
 
+## EPIC003 | Verification failure comments & analyzer system
+
+When a change has Verified -1/-2 (typically set by Jenkins/CI), the dashboard
+shows a red row but provides no clue about *why* it failed. The user must open
+the Gerrit web UI to read through reviewer comments. This EPIC fetches those
+comments via SSH (`--comments` flag) and runs a configurable analyzer to extract
+actionable failure information for display directly on the dashboard.
+
+Comment format varies across Gerrit organisations, instances and projects. The
+analyzer uses a `Protocol` interface so different strategies can be plugged in.
+This EPIC ships a built-in `PatternAnalyzer` (regex-based). An LLM-based
+analyzer is explicitly deferred to a future EPIC — the Protocol is designed with
+that use case in mind but not implemented here.
+
+### Sub-features
+
+| ID           | Name                                    | Deps            |
+|--------------|-----------------------------------------|-----------------|
+| EPIC003-001  | Fetch Gerrit comments via SSH           | —               |
+| EPIC003-002  | Analyzer Protocol & PatternAnalyzer     | —               |
+| EPIC003-003  | Analyzer configuration in TOML          | —               |
+| EPIC003-004  | Integrate analyzer into refresh cycle   | 001, 002, 003   |
+| EPIC003-005  | Display analyzer report in dashboard    | 004, feature 005|
+| EPIC003-006  | Expose analyzer report over MCP         | 004             |
+
+001, 002, 003 are independent and can be implemented in parallel. 004 is the
+integration point. 005 depends on feature 005 (user comments) being merged
+first. 006 is a leaf task.
+
+Full specs are in `spec/features/EPIC003-verification-comments/`.
+
