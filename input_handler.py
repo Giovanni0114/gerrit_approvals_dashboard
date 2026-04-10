@@ -324,10 +324,10 @@ def key_allowed_in_sequence(key: str, sequence: Iterable[str]) -> bool:
 
     match sequence:
         case []:
-            return key in (" ", "r", "q", "f")
+            return key in (" ", "r", "q", "f", "e")
         case [" "]:
             return key in LEADER_ACTIONS
-        case [" ", "e"]:
+        case ["e"]:
             return key in EDITOR_ACTIONS
 
     return False
@@ -340,7 +340,7 @@ def match_action(sequence: list[str]) -> Action | None:
     last = sequence[-1]
 
     match sequence:
-        case [" ", "e", key]:
+        case ["e", key]:
             return EDITOR_ACTIONS.get(key, None)
 
     match last:
@@ -355,9 +355,6 @@ def match_action(sequence: list[str]) -> Action | None:
 
         case _:
             action = LEADER_ACTIONS.get(last, None)
-            # "e" is a submenu prefix — no direct action
-            if action is None and last != "e":
-                return None
             return action
 
 
@@ -374,20 +371,20 @@ class InputHandler:
 
     def hints(self) -> str:
         """Return keyboard shortcut hints for the current input state."""
-        if not self.sequence or self.sequence[0] != " ":
-            return "[bold]Space[/] Changes  [bold]q[/] quit  [bold]r[/] refresh  [bold]f[/] fetch"
-        if self.sequence == [" ", "e"]:
+        if self.sequence[:1] == ["e"]:
             return "[bold]c[/] config  [bold]a[/] approvals"
-        return (
-            "[bold]a[/] add  "
-            "[bold]w[/] wait  "
-            "[bold]d[/] disable  "
-            "[bold]x[/] delete  "
-            "[bold]o[/] open  "
-            "[bold]s[/] automerge  "
-            "[bold]e[/] editor  "
-            "[bold]c[/] comment"
-        )
+        elif self.sequence[:1] == [" "]:
+            return (
+                "[bold]a[/] add  "
+                "[bold]w[/] wait  "
+                "[bold]d[/] disable  "
+                "[bold]x[/] delete  "
+                "[bold]o[/] open  "
+                "[bold]s[/] automerge  "
+                "[bold]c[/] comment"
+            )
+
+        return "[bold]Space[/] Changes  [bold]q[/] quit  [bold]r[/] refresh  [bold]f[/] fetch  [bold]e[/] editor  "
 
     def prompt(self, num_changes: int) -> str:
         if len(self.sequence) == 0:
