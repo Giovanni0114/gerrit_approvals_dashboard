@@ -257,22 +257,30 @@ def comment_delete(app_ctx: AppContext, ctx: Context) -> None:
 # --------------------------------------------------------------------------------
 
 
-@dataclass
-class Action:
-    action: Callable[[AppContext, Context], None] | None
-    required_inputs: list[InputField]
-    sub_actions: dict[str, "SubAction"] | None = None
-
-
 @dataclass(frozen=True)
 class SubAction:
     action: Callable[[AppContext, Context], None]
     required_inputs: list[InputField]
 
 
-REFRESH_ACTION = Action(refresh, [])
-QUIT_ACTION = Action(quit_app, [])
-FETCH_ACTION = Action(fetch_my_changes, [])
+@dataclass(frozen=True)
+class LeafAction:
+    action: Callable[[AppContext, Context], None]
+    required_inputs: list[InputField]
+
+
+@dataclass(frozen=True)
+class MenuAction:
+    required_inputs: list[InputField]
+    sub_actions: dict[str, SubAction]
+
+
+Action = LeafAction | MenuAction
+
+
+REFRESH_ACTION = LeafAction(refresh, [])
+QUIT_ACTION = LeafAction(quit_app, [])
+FETCH_ACTION = LeafAction(fetch_my_changes, [])
 
 # Common InputField for index parameters — allows digits plus multi-index notation chars (, - space).
 _IDX_EXTRA = frozenset({",", "-", " "})
@@ -290,23 +298,23 @@ COMMENT_SUBACTIONS: dict[str, SubAction] = {
     "d": SubAction(comment_delete, [COMMENT_IDX_FIELD]),
 }
 
-LEADER_ACTIONS = {
-    "a": Action(add_change, [InputField("hash"), InputField("host")]),
-    "w": Action(toggle_waiting, [InputField("idx", frozenset({"a"}), digits_only=True, extra_chars=_IDX_EXTRA)]),
-    "d": Action(toggle_disable, [InputField("idx", frozenset({"a"}), digits_only=True, extra_chars=_IDX_EXTRA)]),
-    "x": Action(
+LEADER_ACTIONS: dict[str, Action | None] = {
+    "a": LeafAction(add_change, [InputField("hash"), InputField("host")]),
+    "w": LeafAction(toggle_waiting, [InputField("idx", frozenset({"a"}), digits_only=True, extra_chars=_IDX_EXTRA)]),
+    "d": LeafAction(toggle_disable, [InputField("idx", frozenset({"a"}), digits_only=True, extra_chars=_IDX_EXTRA)]),
+    "x": LeafAction(
         handle_deletion,
         [InputField("idx", frozenset({"a", "x", "r"}), digits_only=True, extra_chars=_IDX_EXTRA)],
     ),
-    "o": Action(open_change, [InputField("idx", digits_only=True, extra_chars=_IDX_EXTRA)]),
-    "s": Action(set_automerge, [InputField("idx", digits_only=True, extra_chars=_IDX_EXTRA)]),
-    "c": Action(None, [IDX_FIELD], COMMENT_SUBACTIONS),
+    "o": LeafAction(open_change, [InputField("idx", digits_only=True, extra_chars=_IDX_EXTRA)]),
+    "s": LeafAction(set_automerge, [InputField("idx", digits_only=True, extra_chars=_IDX_EXTRA)]),
+    "c": MenuAction([IDX_FIELD], COMMENT_SUBACTIONS),
     "e": None,  # submenu — resolved in match_action via full sequence
 }
 
-EDITOR_ACTIONS = {
-    "c": Action(open_config_in_editor, []),
-    "a": Action(open_approvals_in_editor, []),
+EDITOR_ACTIONS: dict[str, LeafAction] = {
+    "c": LeafAction(open_config_in_editor, []),
+    "a": LeafAction(open_approvals_in_editor, []),
 }
 
 
@@ -362,7 +370,7 @@ class InputHandler:
         self.current_field: InputField | None = None
         self.context: dict[str, str] = {}
         self.pending_sub_actions: dict[str, SubAction] | None = None
-        self.current_action: Action | None = None
+        self.current_action: LeafAction | None = None
 
     def hints(self) -> str:
         """Return keyboard shortcut hints for the current input state."""
@@ -418,7 +426,7 @@ class InputHandler:
             if key in self.pending_sub_actions:
                 sub_action = self.pending_sub_actions[key]
                 self.pending_sub_actions = None
-                self.current_action = Action(sub_action.action, sub_action.required_inputs)
+                self.current_action = LeafAction(sub_action.action, sub_action.required_inputs)
 
                 # Special handling for 'e' (edit) sub-action - check if there are comments to edit
                 if key == "e":
@@ -463,7 +471,7 @@ class InputHandler:
         if not self.sequence:
             return
 
-        action = match_action(self.sequence) if self.current_action is None else self.current_action
+        action: Action | None = self.current_action or match_action(self.sequence)
 
         if action is None:
             return
@@ -475,17 +483,12 @@ class InputHandler:
                 return
 
         # All fields collected
-        if action.action is not None:
-            # Normal action - execute it
+        if isinstance(action, LeafAction):
             action.action(self.app_context, self.context)
             self.reset()
-        elif action.sub_actions is not None:
-            # Sub-action action - enter sub-action mode
+        elif isinstance(action, MenuAction):
             self.pending_sub_actions = action.sub_actions
             self.current_action = None
-        else:
-            # This shouldn't happen - action with no action and no sub_actions
-            self.reset()
 
     def _start_field_collection(self) -> None:
         """Start collecting fields for the current action."""

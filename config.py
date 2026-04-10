@@ -220,7 +220,7 @@ def update_config_comments(path: Path, commit_hash: str, comments: list[str]) ->
 
     Replaces the entire comments array atomically.
     """
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     found = False
     for entry in data.get("changes", []):
         if entry.get("hash") == commit_hash:
@@ -229,5 +229,5 @@ def update_config_comments(path: Path, commit_hash: str, comments: list[str]) ->
             break
     if not found:
         raise ValueError(f"Change '{commit_hash}' not found in config")
-    path.write_text(json.dumps(data, indent=2) + "\n")
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return config_mtime(path)

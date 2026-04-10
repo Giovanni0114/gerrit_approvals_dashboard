@@ -21,6 +21,7 @@ from config import (
     remove_changes_from_config,
     resolve_editor,
     resolve_email,
+    update_config_comments,
     update_config_field,
 )
 from display import build_header, build_layout, build_table
@@ -428,8 +429,6 @@ class App:
         ch = self.changes[row - 1]
         ch.comments.append(text)
         try:
-            from config import update_config_comments
-
             self.changes_mtime = update_config_comments(self.changes_path, ch.hash, ch.comments)
         except OSError:
             pass
@@ -439,8 +438,6 @@ class App:
         ch = self.changes[row - 1]
         ch.comments = [text]
         try:
-            from config import update_config_comments
-
             self.changes_mtime = update_config_comments(self.changes_path, ch.hash, ch.comments)
         except OSError:
             pass
@@ -451,8 +448,6 @@ class App:
         if ch.comments:
             ch.comments[-1] = text
             try:
-                from config import update_config_comments
-
                 self.changes_mtime = update_config_comments(self.changes_path, ch.hash, ch.comments)
             except OSError:
                 pass
@@ -472,8 +467,6 @@ class App:
         if 0 <= array_idx < len(ch.comments):
             ch.comments.pop(array_idx)
             try:
-                from config import update_config_comments
-
                 self.changes_mtime = update_config_comments(self.changes_path, ch.hash, ch.comments)
             except OSError:
                 pass
@@ -485,8 +478,6 @@ class App:
         ch = self.changes[row - 1]
         ch.comments.clear()
         try:
-            from config import update_config_comments
-
             self.changes_mtime = update_config_comments(self.changes_path, ch.hash, ch.comments)
         except OSError:
             pass
