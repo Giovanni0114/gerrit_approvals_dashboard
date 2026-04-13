@@ -416,6 +416,7 @@ class InputHandler:
 
     def handle_key(self, key: str) -> None:
         if isinstance(key, Arrow):
+            # self.app_context.status_msg = f"Arrow detected: {key}"
             # TODO: create an handling for arrow navigation
             return
 

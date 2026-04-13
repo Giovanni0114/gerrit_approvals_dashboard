@@ -1,5 +1,6 @@
 import datetime
 import os
+from re import escape
 import select
 import sys
 import termios
@@ -50,6 +51,8 @@ class AtomicCounter:
 
 ENDLINES = ("\r", "\n")
 BACKSPACES = ("\x7f", "\x08")
+ESCAPE = "\x1b"
+ARROWS_PREFIXES = (b"[", b"O")
 
 
 class Arrow(Enum):
@@ -81,10 +84,10 @@ class NoEcho:
         if not ready:
             return None
         data = os.read(self.fd, 1).decode("utf-8", errors="replace")
-        if data == "\x1b":
+        if data == ESCAPE:
             # Possible escape sequence — drain remaining bytes
             while select.select([self.fd], [], [], 0.02)[0]:
-                if os.read(self.fd, 1) == b"[":
+                if os.read(self.fd, 1) in ARROWS_PREFIXES:
                     key = os.read(self.fd, 1)
                     if key in ARROWS:
                         return ARROWS[key]
