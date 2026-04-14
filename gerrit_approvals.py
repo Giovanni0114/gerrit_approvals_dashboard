@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
 from app import App
+from changes import Changes
 from config import (
-    generate_example_changes,
-    generate_example_toml,
-    load_changes,
-    load_toml_config,
+    AppConfig,
+    generate_example_config,
 )
 from utils import NoEcho
 
@@ -43,10 +41,8 @@ def main() -> None:
     config_path = Path(args.config)
 
     if args.init:
-        changes_path = config_path.parent / "approvals.json"
-        generate_example_toml(config_path)
-        generate_example_changes(changes_path)
-        print(f"Created {config_path} and {changes_path} — edit them and run again.")
+        generate_example_config(config_path)
+        print(f"Created {config_path} and- edit them and run again.")
         sys.exit(0)
 
     if not config_path.exists():
@@ -54,15 +50,15 @@ def main() -> None:
         print("Run with --init to generate an example, or create it manually.")
         sys.exit(1)
 
-    cfg = load_toml_config(config_path)
-    changes = load_changes(cfg.changes_file, cfg.default_host, cfg.default_port)
+    config = AppConfig(config_path)
+    changes = Changes(config.changes_path)
+    changes.load_changes(config.default_host, config.default_port)
 
-    app = App(
-        config_path, cfg.changes_file, changes, cfg.interval, cfg.default_host, cfg.default_port, cfg.email, cfg.editor
-    )
+    app = App(config, changes)
 
     if args.mcp:
         from mcp_background import BackgroundMCPServer
+
         BackgroundMCPServer(app)
 
     app.run()

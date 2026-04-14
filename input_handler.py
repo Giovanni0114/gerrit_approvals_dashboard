@@ -220,9 +220,9 @@ def open_config_in_editor(app_ctx: AppContext, ctx: Context) -> None:
     app_ctx.open_config_in_editor()
 
 
-def open_approvals_in_editor(app_ctx: AppContext, ctx: Context) -> None:
+def open_changes_in_editor(app_ctx: AppContext, ctx: Context) -> None:
     """Open the approvals/changes file in the configured editor."""
-    app_ctx.open_approvals_in_editor()
+    app_ctx.open_changes_in_editor()
 
 
 def fetch_my_changes(app_ctx: AppContext, ctx: Context) -> None:
@@ -315,7 +315,7 @@ LEADER_ACTIONS: dict[str, Action | None] = {
 
 EDITOR_ACTIONS: dict[str, LeafAction] = {
     "c": LeafAction(open_config_in_editor, []),
-    "a": LeafAction(open_approvals_in_editor, []),
+    "a": LeafAction(open_changes_in_editor, []),
 }
 
 
@@ -387,7 +387,7 @@ class InputHandler:
 
         return "[bold]Space[/] Changes  [bold]q[/] quit  [bold]r[/] refresh  [bold]f[/] fetch  [bold]e[/] editor  "
 
-    def prompt(self, num_changes: int) -> str:
+    def prompt(self) -> str:
         if len(self.sequence) == 0:
             return ""
 
@@ -414,7 +414,7 @@ class InputHandler:
 
         return PROMPTS_FOR_LAST_KEY.get(self.sequence[-1], "")
 
-    def handle_key(self, key: str) -> None:
+    def handle_key(self, key: str | Arrow) -> None:
         if isinstance(key, Arrow):
             # self.app_context.status_msg = f"Arrow detected: {key}"
             # TODO: create an handling for arrow navigation

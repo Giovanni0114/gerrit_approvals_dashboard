@@ -1,4 +1,5 @@
 from datetime import datetime
+from pathlib import Path
 from typing import Iterable
 
 from rich.console import Group
@@ -48,12 +49,13 @@ def approvals_to_text(approvals: Iterable[ApprovalEntry]) -> Text:
 
 def build_table(
     changes: list[TrackedChange],
-    config_path: str,
+    config_path: Path,
     interval: float,
     status_msg: str = "",
     ssh_requests: int = 0,
     hints: str = "",
 ) -> Table:
+    # TODO config.py should produce message with config summary
     caption = f"[dim]config:[/dim] {config_path} | [dim]interval:[/dim] {interval}s"
 
     if hints:

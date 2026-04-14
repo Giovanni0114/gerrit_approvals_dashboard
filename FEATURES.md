@@ -233,3 +233,8 @@ planned refresh.
 I would like to be able to create some sort of overlay screen, floating window,
 or some similar effect to show additional information on tab click
 
+
+## 012 | Change "approval" to "changes" whenever it fits
+
+In this project i use "approval" a lot, I think "changes" is more fitting
+

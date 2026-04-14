@@ -13,6 +13,11 @@
             "items": {
                 "type": "object",
                 "properties": {
+                    "number": {
+                        "type": "integer",
+                        "description": "Gerrit change number (auto-discovered and persisted)",
+                        "minimum": 1
+                    },
                     "host": {
                         "type": "string",
                         "description": "Gerrit SSH host"
@@ -45,11 +50,6 @@
                             "type": "string"
                         },
                         "default": []
-                    },
-                    "number": {
-                        "type": "integer",
-                        "description": "Gerrit change number (auto-discovered and persisted)",
-                        "minimum": 1
                     }
                 },
                 "required": ["hash"],
