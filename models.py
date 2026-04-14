@@ -1,8 +1,11 @@
-from dataclasses import dataclass, field
-from typing import Iterable, Protocol, runtime_checkable
+from __future__ import annotations
 
-import changes
-import config
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Iterable, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    import changes
+    import config
 
 
 @dataclass

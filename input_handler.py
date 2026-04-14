@@ -7,7 +7,7 @@ from utils import Arrow
 Context = dict[str, str]
 
 PROMPTS_FOR_LAST_KEY = {
-    "a": "Add change",
+    "a": "Add change (number)",
     "w": "Toggle waiting",
     "d": "Toggle disabled",
     "x": "Toggle deletion",
@@ -110,15 +110,17 @@ def quit_app(app_ctx: AppContext, ctx: Context) -> None:
 
 
 def add_change(app_ctx: AppContext, ctx: Context) -> None:
-    hash = ctx["hash"]
+    raw_number = ctx["number"]
     raw_host = ctx["host"]
 
-    if len(hash) == 0:
-        app_ctx.status_msg = f'[red]Invalid hash: "{hash}"[/red]'
+    if not raw_number.isdigit() or int(raw_number) == 0:
+        app_ctx.status_msg = f'[red]Invalid change number: "{raw_number}"[/red]'
         return
 
+    number = int(raw_number)
+
     if raw_host == "":
-        host = app_ctx.default_host or ""
+        host = app_ctx.config.default_host or ""
     elif raw_host.isdigit():
         idx = int(raw_host)
         if idx < 1 or idx > len(app_ctx.changes):
@@ -132,7 +134,7 @@ def add_change(app_ctx: AppContext, ctx: Context) -> None:
         app_ctx.status_msg = "[red]No host specified and no default_host configured[/red]"
         return
 
-    app_ctx.add_change(hash, host)
+    app_ctx.add_change(number, host)
 
 
 def toggle_waiting(app_ctx: AppContext, ctx: Context) -> None:
@@ -300,7 +302,7 @@ COMMENT_SUBACTIONS: dict[str, SubAction] = {
 }
 
 LEADER_ACTIONS: dict[str, Action | None] = {
-    "a": LeafAction(add_change, [InputField("hash"), InputField("host")]),
+    "a": LeafAction(add_change, [InputField("number", digits_only=True), InputField("host")]),
     "w": LeafAction(toggle_waiting, [InputField("idx", frozenset({"a"}), digits_only=True, extra_chars=_IDX_EXTRA)]),
     "d": LeafAction(toggle_disable, [InputField("idx", frozenset({"a"}), digits_only=True, extra_chars=_IDX_EXTRA)]),
     "x": LeafAction(

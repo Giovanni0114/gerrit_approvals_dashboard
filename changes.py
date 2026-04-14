@@ -1,5 +1,4 @@
 import json
-from collections.abc import Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +27,12 @@ class Changes:
             return self.path.stat().st_mtime
         except OSError:
             return 0.0
+
+    def __len__(self) -> int:
+        return len(self.changes)
+
+    def __getitem__(self, idx: int) -> TrackedChange:
+        return self.changes[idx]
 
     def count(self) -> int:
         return len(self.changes)

@@ -15,26 +15,26 @@ from utils import NoEcho
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Config-file driven gerrit approvals dashboard",
+        description="Gerrit Changes Dashboard",
     )
 
     parser.add_argument(
         "config",
         nargs="?",
         default="config.toml",
-        help="Path to TOML config file (default: approvals.toml)",
+        help="Path to TOML config file (default: config.toml)",
     )
 
     parser.add_argument(
         "--init",
         action="store_true",
-        help="Generate example approvals.toml and approvals.json, then exit",
+        help="Generate example config.toml, then exit",
     )
 
     parser.add_argument(
         "--mcp",
         action="store_true",
-        help="Start MCP server for gerrit approvals",
+        help="Start MCP server for gerrit changes",
     )
 
     args = parser.parse_args()
