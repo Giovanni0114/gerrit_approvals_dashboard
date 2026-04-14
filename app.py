@@ -99,7 +99,8 @@ class App:
         if ch.waiting and ch._snapshot and new_snapshot != ch._snapshot:
             ch.waiting = False
             try:
-                self.changes_mtime = self.changes.update_config_field(ch.number, "waiting", False)
+                self.changes.save_changes()
+                self.changes_mtime = self.changes.mtime()
             except OSError:
                 pass
         ch._snapshot = new_snapshot
