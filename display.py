@@ -80,7 +80,7 @@ def build_table(
     table.add_column("Comments", no_wrap=False, ratio=50)
     table.add_column("Approvals", no_wrap=False, ratio=25)
 
-    for idx, ch in enumerate(changes, 1):
+    for idx, ch in enumerate(changes.get_all(), 1):
         styles = {
             "idx": "dim",
             "number": "magenta",
@@ -92,7 +92,7 @@ def build_table(
         }
 
         if ch.error:
-            table.add_row(str(idx), "", Text(ch.error, style="red"), "", "", "")
+            table.add_row(str(idx), str(ch.number), Text(ch.error, style="red"), "", "", "")
             continue
 
         if ch.url:

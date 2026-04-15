@@ -1,28 +1,44 @@
 import os
 import subprocess
 import tomllib
+from functools import lru_cache
 from pathlib import Path
+
+from models import GerritInstance
 
 DEFAULT_INTERVAL = 30
 DEFAULT_CHANGES_FILENAME = "changes.json"
-DEFAULT_DEFAULT_PORT = 22
+
+
+@lru_cache(maxsize=1)
+def _get_email_from_git_config() -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "config", "user.email"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return None
+        email = result.stdout.strip()
+        return email
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
 
 
 class AppConfig:
     path: Path
 
-    # --- mandatory ---
     interval: int
     changes_path: Path
 
-    # --- optional ---
-    default_host: str | None
-    default_port: int | None
-    email: str | None
-    editor: str | None = None
+    _instances: list[GerritInstance]
+    _editor: str | None = None
 
     def __init__(self, path: Path) -> None:
         self.path = path
+        self._instances = []
         self.load_config()
 
     def mtime(self) -> float:
@@ -41,60 +57,111 @@ class AppConfig:
         config_data = data["config"]
 
         try:
-            self.interval = int(config_data.get("interval", DEFAULT_INTERVAL))
+            self.interval = int((config_data.get("interval", DEFAULT_INTERVAL)))
         except Exception as ex:
             raise ValueError(f"Invalid interval value: {config_data.get('interval')}") from ex
 
         if self.interval < 1:
             raise ValueError(f"interval must be >= 1, got {self.interval}")
 
-        try:
-            self.default_port = int(config_data.get("default_port", DEFAULT_DEFAULT_PORT))
-        except Exception as ex:
-            raise ValueError(f"Invalid default_port: {config_data.get('default_port')}") from ex
-
         changes_file_filename = config_data.get("changes_file", DEFAULT_CHANGES_FILENAME)
         self.changes_path = (self.path.parent / changes_file_filename).resolve()
+        if not self.changes_path.parent.exists():
+            raise ValueError(f"Directory for changes_file does not exist: {self.changes_path.parent}")
 
-        self.default_host = config_data.get("default_host")
-        self.email = config_data.get("email")
-        self.editor = config_data.get("editor")
+        if not self.changes_path.parent.is_dir():
+            raise ValueError(f"Directory for changes_file is not a directory: {self.changes_path.parent}")
 
-    def resolve_email(self) -> str | None:
-        if self.email is not None:
-            return self.email
+        self._editor = config_data.get("editor")
 
-        try:
-            result = subprocess.run(
-                ["git", "config", "user.email"],
-                capture_output=True,
-                text=True,
-                timeout=5,
+        self._instances = []
+
+        default_host = config_data.get("default_host")
+        default_port = config_data.get("default_port")
+        default_email = config_data.get("default_email")
+
+        if default_host and default_port:
+            self._instances.append(
+                GerritInstance(name="default", host=default_host, port=default_port, email=default_email)
             )
-            if result.returncode != 0:
-                return None
-            email = result.stdout.strip()
-            return email
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return None
 
-    def resolve_editor(self) -> str | None:
-        if self.editor is not None:
-            return self.editor
+        for ins_name in data["instance"]:
+            ins = data["instance"][ins_name]
+            host = ins.get("host") or default_host
+            port = ins.get("port") or default_port
+            email = ins.get("email") or default_email
+
+            if host and port:
+                self._instances.append(GerritInstance(name=ins_name, host=host, port=port, email=email))
+
+        if len(self._instances) == 0:
+            raise ValueError("No Gerrit instances configured. Please specify at least one instance in the config file.")
+
+        if len(set((ins.name for ins in self._instances))) != len(self._instances):
+            raise ValueError("Instance names must be unique.")
+
+    @property
+    def default_host(self) -> str:
+        return self.default_instance.host
+
+    @property
+    def default_port(self) -> int:
+        return self.default_instance.port
+
+    @property
+    def default_instance(self) -> GerritInstance:
+        if len(self._instances) == 0:
+            raise ValueError("No Gerrit instances configured")
+        return self._instances[0]
+
+    @property
+    def instances(self) -> list[GerritInstance]:
+        return self._instances
+
+    def get_instance_by_name(self, name: str) -> GerritInstance | None:
+        for ins in self._instances:
+            if ins.name == name:
+                return ins
+        return None
+
+    @property
+    def editor(self) -> str | None:
+        if self._editor is not None:
+            return self._editor
         return os.environ.get("EDITOR") or None
+
+    def resolve_email(self, instance: GerritInstance) -> str | None:
+        if instance.email:
+            return instance.email
+
+        if self.default_instance.email:
+            return self.default_instance.email
+
+        return _get_email_from_git_config()
 
 
 def generate_example_config(path: Path) -> None:
     if path.exists():
         return
     content = (
-        "# Gerrit Approvals Dashboard — settings\n"
+        "# Gerrit Changes Dashboard settings\n"
         "[config]\n"
         "interval = 30\n"
         'changes_file = "./changes.json"  # path relative to this file\n'
-        '# default_host = "gerrit.example.com"\n'
-        "# default_port = 22\n"
-        '# email = "you@example.com"  # falls back to git config user.email\n'
+        'default_host = "gerrit.example.com"\n'
+        "default_port = 22\n"
+        '# default_email = "you@example.com"  # falls back to git config user.email\n'
         '# editor = "vim"  # falls back to env EDITOR\n'
+        "\n"
+        "# if you have multiple gerrit instances, you can specify them here.\n"
+        "# If default_host/default_port are set, they will be used as instance named 'default'\n"
+        "# Also, default_* values will be used as defaults for each instance.\n"
+        "# Instances must have different names.\n"
+        "\n"
+        "# If default values are not specified, first instance is used as default.\n"
+        "# [instance.default]\n"
+        '# host = "localhost"\n'
+        "# port = 29418\n"
+        '# email = ""\n'
     )
     path.write_text(content, encoding="utf-8")

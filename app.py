@@ -19,12 +19,43 @@ from config import (
 from display import build_header, build_layout, build_table
 from gerrit import is_submitted, query_approvals, query_open_changes
 from input_handler import InputHandler
-from models import ApprovalEntry, TrackedChange
+from models import ApprovalEntry, GerritInstance, TrackedChange
 from utils import Arrow, AtomicCounter, NoEcho
 
 _console = Console()
 
 EditorTarget = Literal["changes", "config"]
+
+
+def _store_result(ch: TrackedChange | None, data: dict) -> None:
+    if ch is None:
+        return
+
+    if "error" in data:
+        ch.error = data["error"]
+        return
+
+    ch.error = None
+
+    ch.subject = data.get("subject")
+    ch.project = data.get("project")
+    ch.url = data.get("url")
+    patch_sets = data.get("patchSets", [])
+    if patch_sets:
+        ch.current_revision = patch_sets[-1].get("revision")
+        raw = patch_sets[-1].get("approvals", [])
+        ch.approvals = [
+            ApprovalEntry(a.get("type", "?"), a.get("value", ""), a.get("by", {}).get("name", "")) for a in raw
+        ]
+    else:
+        ch.approvals = []
+
+    new_snapshot = frozenset((a.label, a.value, a.by) for a in ch.approvals)
+    if ch.waiting and ch._snapshot and new_snapshot != ch._snapshot:
+        ch.waiting = False
+
+    ch._snapshot = new_snapshot
+    ch.submitted = is_submitted(data)
 
 
 class App:
@@ -33,6 +64,7 @@ class App:
         self.changes = changes
 
         self.status_msg: str = ""
+        self.exit_msg: str = ""
         self.running: bool = True
         self.key_queue: Queue[str | Arrow] = Queue()
         self.input: InputHandler = InputHandler(self)
@@ -50,59 +82,30 @@ class App:
 
     # --- Query methods ---
 
-    def do_queries(self) -> None:
-        self.status_msg = ""
-        pending = self.changes.get_running()
+    def _query(self, ch: TrackedChange) -> tuple[TrackedChange | None, dict]:
+        instance = self.config.get_instance_by_name(ch.instance)
+        if instance is None:
+            return None, {}
 
-        def _query(ch: TrackedChange) -> tuple[TrackedChange, dict]:
-            return ch, query_approvals(str(ch.number), ch.host, ch.port)
+        return ch, query_approvals(str(ch.number), instance.host, instance.port)
 
-        with ThreadPoolExecutor(max_workers=len(pending) or 1) as pool:
-            for ch, data in pool.map(_query, pending):
-                self._store_result(ch, data)
-
-    def query_disabled_once(self) -> None:
-        """Query for disabled changes that have no cached data yet."""
-        need = self.changes.get_disabled()
-
-        if not need:
+    def _do_query(self, changes: list[TrackedChange]) -> None:
+        if not changes:
             return
 
-        def _query(ch: TrackedChange) -> tuple[TrackedChange, dict]:
-            return ch, query_approvals(str(ch.number), ch.host, ch.port)
-
-        with ThreadPoolExecutor(max_workers=len(need)) as pool:
-            for ch, data in pool.map(_query, need):
-                self._store_result(ch, data)
+        with ThreadPoolExecutor(max_workers=len(changes) or 1) as pool:
+            for ch, data in pool.map(self._query, changes):
+                _store_result(ch, data)
 
         self.changes_mtime = self.changes.save_changes()
 
-    def _store_result(self, ch: TrackedChange, data: dict) -> None:
-        if "error" in data:
-            ch.error = data["error"]
-            return
+    def query_active_changes(self) -> None:
+        self._do_query(self.changes.get_running())
 
-        ch.error = None
-
-        ch.subject = data.get("subject")
-        ch.project = data.get("project")
-        ch.url = data.get("url")
-        patch_sets = data.get("patchSets", [])
-        if patch_sets:
-            ch.current_revision = patch_sets[-1].get("revision")
-            raw = patch_sets[-1].get("approvals", [])
-            ch.approvals = [
-                ApprovalEntry(a.get("type", "?"), a.get("value", ""), a.get("by", {}).get("name", "")) for a in raw
-            ]
-        else:
-            ch.approvals = []
-
-        new_snapshot = frozenset((a.label, a.value, a.by) for a in ch.approvals)
-        if ch.waiting and ch._snapshot and new_snapshot != ch._snapshot:
-            ch.waiting = False
-
-        ch._snapshot = new_snapshot
-        ch.submitted = is_submitted(data)
+    def query_disabled_once(self) -> None:
+        # TODO: when the real caching system is implemented,
+        # we should limit the querying to disabled changes without data
+        self._do_query(self.changes.get_disabled())
 
     def set_automerge(self, row: int) -> None:
         ch = self.changes.at(row - 1)
@@ -119,8 +122,12 @@ class App:
             self.status_msg = f"[yellow]Label Automerge already exists for change #{row}[/yellow]"
             return
 
-        # Use current_revision as operation key if available, else fall back to hash
-        result = gerrit.query_set_automerge(ch.current_revision, ch.host, ch.port)
+        instance = self.config.get_instance_by_name(ch.instance)
+        if instance is None:
+            self.status_msg = f"[red]cannot find instance '{ch.instance}' for change #{row}[/red]"
+            return
+
+        result = gerrit.query_set_automerge(ch.current_revision, instance.host, instance.port)
 
         if "error" in result:
             self.status_msg = f"[red]Automerge failed for change #{row}: {result['error']}[/red]"
@@ -141,7 +148,7 @@ class App:
             self.config.load_config()
             self.config_mtime = new_toml_mtime
 
-            self.changes.load_changes(self.config.default_host, self.config.default_port)
+            self.changes.load_changes()
             self.changes_mtime = new_changes_mtime
 
             self.status_msg = "[green]Config reloaded[/green]"
@@ -161,7 +168,7 @@ class App:
         self.pending_editor = "changes"
 
     def _run_editor(self, target: EditorTarget) -> None:
-        editor_cmd = self.config.resolve_editor()
+        editor_cmd = self.config.editor
 
         if not editor_cmd:
             self.status_msg = "[red]No editor configured. Set EDITOR env var or 'editor' in config.[/red]"
@@ -184,7 +191,6 @@ class App:
 
         no_echo = NoEcho.instance
         if no_echo is not None:
-            # Restore normal (cooked) terminal mode so the editor has full control
             no_echo.disable()
 
         try:
@@ -304,6 +310,9 @@ class App:
             self.status_msg = f"[green]All {len(candidates)} change(s) re-enabled[/green]"
 
     def refresh_all(self) -> None:
+        # I know this is not a obvious place for cleaning status msg but I want to have easy way for it
+        self.status_msg = ""
+
         if self.manual_refresh_counter.value() >= 5:
             self.status_msg = "[red]Manual refresh limit reached[/red]"
             return
@@ -324,10 +333,10 @@ class App:
                     self.manual_refresh_counter.reset()
                     return
 
-    def add_change(self, number: int, host: str) -> None:
-        new_change = TrackedChange(number=number, host=host)
+    def add_change(self, number: int, instance: str) -> None:
+        new_change = TrackedChange(number=number, instance=instance)
         self.changes.append(new_change)
-        self.status_msg = f"[green]Added {number} @ {host}[/green]"
+        self.status_msg = f"[green]Added {number} @ {instance}[/green]"
         self.changes_mtime = self.changes.save_changes()
 
     def delete_all_submitted(self) -> None:
@@ -367,40 +376,57 @@ class App:
         else:
             self.status_msg = "[dim]Nothing to restore[/dim]"
 
-    def fetch_open_changes(self) -> None:
-        email = self.config.resolve_email()
-        if not email:
-            self.status_msg = "[red]No email configured and git config user.email not available[/red]"
-            return
+    def _fetch_open_changes_from_instance(self, instance: GerritInstance) -> int:
+        host = instance.host
+        port = instance.port
+        email = self.config.resolve_email(instance)
 
-        results = query_open_changes(email, self.config.default_host or "", self.config.default_port)
-        existing_numbers = {ch.number for ch in self.changes.get_all()}
+        if not email:
+            self.status_msg = (
+                f"[red]Insufficient configuration for auto-fetching: email={email} host={host} port={port}[/red]"
+            )
+            return 0
+
+        results = query_open_changes(email, host, port)
+
         added = 0
+        numbers_in_changes = {ch.number for ch in self.changes.get_all()}
+
         for change_data in results:
             if change_data.get("wip"):
                 continue
+
             number = change_data.get("number")
 
-            if number is None or number in existing_numbers:
+            if number is None or number in numbers_in_changes:
                 continue
 
-            host = self.config.default_host or ""
-
-            # TODO: use fethed data instead of relaying on another refresh
-            self.changes.append(TrackedChange(number=number, host=host))
-            existing_numbers.add(number)
+            ch = TrackedChange(number=number, instance=instance.name)
+            _store_result(ch, change_data)
+            self.changes.append(ch)
+            numbers_in_changes.add(number)
             added += 1
+
+        return added
+
+    def fetch_open_changes(self) -> None:
+        added = 0
+
+        for instance in self.config.instances:
+            added += self._fetch_open_changes_from_instance(instance)
 
         if added:
             self.status_msg = f"[green]Added {added} change(s)[/green]"
             self.changes_mtime = self.changes.save_changes()
             self._start_refresh()
         else:
-            self.status_msg = f"[dim] No new changes for {email} on {self.config.default_host}[/dim]"
+            self.status_msg = f"[dim] No new changes for on {len(self.config.instances)} instances[/dim]"
+            pass
 
     def quit(self) -> None:
         self.changes.remove_all_deleted()
-        self.changes.save_changes()
+        self.changes_mtime = self.changes.save_changes()
+        self.exit_msg = f"{len(self.changes.get_all())} change(s) saved. Bye!"
         self.running = False
 
     # --- Comments ---
@@ -443,7 +469,7 @@ class App:
                 self.status_msg = f"[red]No comment at index {comment_idx}[/red]"
 
     def delete_all_comments(self, row: int) -> None:
-        with self.changes.edit_change(row) as ch:
+        with self.changes.edit_change(row - 1) as ch:
             if ch is None:
                 self.status_msg = f"[red]no change at index {row}[/red]"
                 return
@@ -469,7 +495,7 @@ class App:
     def _bg_refresh(self) -> None:
         """Background thread: run SSH queries then signal completion."""
         try:
-            self.do_queries()
+            self.query_active_changes()
         finally:
             self.refresh_done.set()
 
@@ -505,7 +531,7 @@ class App:
 
     def run(self) -> None:
         """Run initial queries, start threads, enter main loop."""
-        self.do_queries()
+        self.query_active_changes()
         self.query_disabled_once()
 
         reader_thread = Thread(target=self._key_reader, daemon=True)
@@ -535,7 +561,13 @@ class App:
                         except Empty:
                             break
                         self.input.handle_key(key)
+                        if not self.running:
+                            break
+
                         needs_visual_update = True
+
+                    if not self.running:
+                        break
 
                     if self.pending_editor:
                         target = self.pending_editor
@@ -565,4 +597,4 @@ class App:
         except KeyboardInterrupt:
             pass
         finally:
-            _console.print("\n[dim]Stopped.[/dim]")
+            _console.print(f"\n[dim]Stopped. {self.exit_msg}[/dim]")

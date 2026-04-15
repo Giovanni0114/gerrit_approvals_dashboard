@@ -26,6 +26,7 @@ class InputField:
     special_chars: frozenset[str] = field(default_factory=frozenset)
     digits_only: bool = False
     extra_chars: frozenset[str] = field(default_factory=frozenset)
+    special_hint_func: Callable[[AppContext], str] | None = None
 
 
 # --------------------------------------------------------------------------------
@@ -111,7 +112,7 @@ def quit_app(app_ctx: AppContext, ctx: Context) -> None:
 
 def add_change(app_ctx: AppContext, ctx: Context) -> None:
     raw_number = ctx["number"]
-    raw_host = ctx["host"]
+    raw_instance = ctx["instance"]
 
     if not raw_number.isdigit() or int(raw_number) == 0:
         app_ctx.status_msg = f'[red]Invalid change number: "{raw_number}"[/red]'
@@ -119,22 +120,22 @@ def add_change(app_ctx: AppContext, ctx: Context) -> None:
 
     number = int(raw_number)
 
-    if raw_host == "":
-        host = app_ctx.config.default_host or ""
-    elif raw_host.isdigit():
-        idx = int(raw_host)
-        if idx < 1 or idx > len(app_ctx.changes):
-            app_ctx.status_msg = f"[red]No change at index {idx}[/red]"
+    if raw_instance == "":
+        instance = app_ctx.config.default_instance.name
+    elif raw_instance.isdigit():
+        idx = int(raw_instance)
+        if idx < 1 or idx > len(app_ctx.config.instances):
+            app_ctx.status_msg = f"[red]No instance at index {idx}[/red]"
             return
-        host = app_ctx.changes[idx - 1].host
+        instance = app_ctx.config.instances[idx - 1].name
     else:
-        host = raw_host
+        instance = raw_instance
 
-    if not host:
-        app_ctx.status_msg = "[red]No host specified and no default_host configured[/red]"
+    if not instance:
+        app_ctx.status_msg = "[red]No instance specified[/red]"
         return
 
-    app_ctx.add_change(number, host)
+    app_ctx.add_change(number, instance)
 
 
 def toggle_waiting(app_ctx: AppContext, ctx: Context) -> None:
@@ -302,8 +303,17 @@ COMMENT_SUBACTIONS: dict[str, SubAction] = {
     "d": SubAction(comment_delete, [COMMENT_IDX_FIELD]),
 }
 
+
+def _instances_hint(app_ctx: AppContext) -> str:
+    if not app_ctx.config.instances:
+        return "No instances configured"
+    return "Instances: " + ", ".join(f"{idx + 1}={inst.name}" for idx, inst in enumerate(app_ctx.config.instances))
+
+
 LEADER_ACTIONS: dict[str, Action | None] = {
-    "a": LeafAction(add_change, [InputField("number", digits_only=True), InputField("host")]),
+    "a": LeafAction(
+        add_change, [InputField("number", digits_only=True), InputField("instance", special_hint_func=_instances_hint)]
+    ),
     "w": LeafAction(toggle_waiting, [InputField("idx", frozenset({"a"}), digits_only=True, extra_chars=_IDX_EXTRA)]),
     "d": LeafAction(toggle_disable, [InputField("idx", frozenset({"a"}), digits_only=True, extra_chars=_IDX_EXTRA)]),
     "x": LeafAction(
@@ -410,8 +420,14 @@ class InputHandler:
 
         if self.input is not None and self.current_field is not None:
             hint = PROMPTS_FOR_LAST_KEY.get(self.sequence[-1], "")
-            special = self.current_field.special_chars
-            special_hint = f" [{' / '.join(sorted(special))}]" if special else ""
+            special_hint = ""
+            if special := self.current_field.special_chars:
+                special_hint = f" [{' / '.join(sorted(special))}]"
+
+            elif self.current_field.special_hint_func is not None:
+                func_hint = self.current_field.special_hint_func(self.app_context)
+                special_hint += f"({func_hint})"
+
             hint += f": {self.current_field.name}: {self.input}_{special_hint} [ESC=cancel]"
             return hint
 

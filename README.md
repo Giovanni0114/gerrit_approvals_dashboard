@@ -32,7 +32,7 @@ Generate an example config:
 python3 gerrit_changes_dashboard.py --init
 ```
 
-This creates `config.toml` with example settings. Edit it to configure your Gerrit host, port, email, and other preferences.
+This creates `config.toml` with example settings. Edit it to configure your Gerrit instances, email, and other preferences.
 
 Then run the dashboard:
 
@@ -63,7 +63,7 @@ python3 gerrit_changes_dashboard.py /path/to/custom/config.toml
 
 | Keybind                 | Action                                    |
 | ---------               | --------                                  |
-| `Space` + `a`           | Add a new change by number + host         |
+| `Space` + `a`           | Add a new change by number + instance         |
 | `Space` + `w` + `<idx>` | Toggle waiting status                     |
 | `Space` + `d` + `<idx>` | Toggle disabled status                    |
 | `Space` + `x` + `<idx>` | Toggle deletion or manage deleted changes |

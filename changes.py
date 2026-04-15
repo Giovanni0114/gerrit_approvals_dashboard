@@ -2,12 +2,8 @@ import json
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 from models import TrackedChange
-
-StateField = Literal["deleted", "submitted", "disabled", "waiting"]
-Number = int
 
 
 @dataclass
@@ -88,11 +84,11 @@ class Changes:
     # --- operations ---
 
     def remove_all_deleted(self):
-        self.changes[:] = [ch for ch in self.changes if not ch.deleted]
+        self.changes = [ch for ch in self.changes if not ch.deleted]
 
     # --- changes file rw ---
 
-    def load_changes(self, default_host: str | None, default_port: int | None):
+    def load_changes(self):
         new_changes = []
         data = json.loads(self.path.read_text(encoding="utf-8"))
         if not isinstance(data, list):
@@ -106,20 +102,12 @@ class Changes:
 
             commit_hash = entry.get("hash")
 
-            host = entry.get("host", default_host)
-            if not host:
-                raise ValueError(f"Change '{number}' has no host and no default_host is set")
-
-            try:
-                port = int(entry.get("port", default_port))
-            except (ValueError, TypeError) as ex:
-                raise ValueError(f"Invalid port for change '{commit_hash}': {entry.get('port')}") from ex
+            instance = entry.get("instance", "default")
 
             new_changes.append(
                 TrackedChange(
                     number=number,
-                    host=host,
-                    port=port,
+                    instance=instance,
                     waiting=bool(entry.get("waiting", False)),
                     disabled=bool(entry.get("disabled", False)),
                     deleted=bool(entry.get("deleted", False)),
@@ -138,10 +126,8 @@ class Changes:
         for ch in self.changes:
             change = {
                 "number": ch.number,
-                "host": ch.host,
+                "instance": ch.instance,
             }
-            if ch.port:
-                change["port"] = ch.port
 
             if ch.waiting:
                 change["waiting"] = ch.waiting

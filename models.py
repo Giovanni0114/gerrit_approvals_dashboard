@@ -17,16 +17,16 @@ class ApprovalEntry:
 
 @dataclass(frozen=True)
 class GerritInstance:
+    name: str
     host: str
-    port: str
+    port: int
     email: str | None
 
 
 @dataclass
 class TrackedChange:
     number: int
-    host: str
-    port: int | None = None
+    instance: str = "default"
     comments: list[str] = field(default_factory=list)
 
     # --- state ---
@@ -71,7 +71,7 @@ class AppContext(Protocol):
     def refresh_all(self) -> None: ...
     def open_change_webui(self, row: int) -> None: ...
     def set_automerge(self, row: int) -> None: ...
-    def add_change(self, number: int, host: str) -> None: ...
+    def add_change(self, number: int, instance: str) -> None: ...
     def delete_all_submitted(self) -> None: ...
     def purge_deleted(self) -> None: ...
     def restore_all(self) -> None: ...

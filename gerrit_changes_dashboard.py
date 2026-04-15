@@ -52,7 +52,7 @@ def main() -> None:
 
     config = AppConfig(config_path)
     changes = Changes(config.changes_path)
-    changes.load_changes(config.default_host, config.default_port)
+    changes.load_changes()
 
     app = App(config, changes)
 

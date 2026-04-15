@@ -1,4 +1,4 @@
-# Gerrit Approvals MCP Tools
+# Gerrit Changes MCP Tools
 
 ## Implementation Status
 
@@ -24,7 +24,7 @@ All RPC routes and responses will include the API version once implemented. Exam
 ## Overview
 
 This directory contains metadata and a description for the MCP (Model Control Plane)
-tools exposed by the Gerrit Approvals Dashboard application. The background MCP server
+tools exposed by the Gerrit Changes Dashboard application. The background MCP server
 is started by the application (with `--mcp` flag) and exposes a small set of tools (RPCs)
 that let an authorized client (for example an LLM acting through the MCP) inspect and
 manage the set of tracked Gerrit changes.
@@ -48,11 +48,11 @@ Valid tokens come from the application's runtime configuration (see `utils.autho
 
 ## Identification rules
 
-- Changes are identified by `number` (Gerrit change number) + `host`.
+- Changes are identified by `number` (Gerrit change number) + `instance`.
 - In the MCP response payload, the field `hash` contains the current patchset revision
   (maps to `TrackedChange.current_revision`). This value may be `null` if the change
   has not been queried from Gerrit yet.
-- For single-change operations (planned), both `number` and `host` MUST be provided.
+- For single-change operations (planned), both `number` and `instance` MUST be provided.
 
 ## Response envelope (planned)
 
@@ -123,12 +123,12 @@ schemas see `mcp/tools.json`.
   - Output: `{ api_version: string, changes: list[MCPChange] }`
 
 - get_change
-  - Return a single change identified by number+host (both required).
+  - Return a single change identified by number+instance (both required).
   - Output: `{ api_version: string, change: MCPChange }`
 
 - add_change
   - Add a change to the tracked list and persist to the changes file.
-  - Input: `{ number: integer, host: string }`
+  - Input: `{ number: integer, instance: string }`
   - Output: `{ api_version: string, added: MCPChange, mtime: number }`
 
 - set_waiting
@@ -150,7 +150,7 @@ schemas see `mcp/tools.json`.
   - Output: `{ api_version: string, removed_count: number }`
 
 - delete_change
-  - Permanently remove a single change (requires number+host). Implementations may
+  - Permanently remove a single change (requires number+instance). Implementations may
     internally mark+purge to reuse existing code paths.
   - Output: `{ api_version: string, removed: true, number: integer }`
 
@@ -163,7 +163,7 @@ schemas see `mcp/tools.json`.
   - Output: `{ api_version: string, queued: boolean, message?: string }`
 
 - set_automerge
-  - Request Gerrit to set automerge (+1) for a change (number+host required).
+  - Request Gerrit to set automerge (+1) for a change (number+instance required).
   - Output: `{ api_version: string, message: string }`
 
 - open_change_webui
@@ -179,7 +179,7 @@ schemas see `mcp/tools.json`.
 All tool outputs that include Change objects use this shape and always include all
 fields (nullable fields will be present with explicit null values):
 
-- host: `string`
+- instance: `string`
 - hash: `string | null` — current patchset revision (`TrackedChange.current_revision`)
 - number: `integer`
 - waiting: `boolean`
@@ -207,7 +207,7 @@ Examples below are conceptual. FastMCP exposes RPC endpoints at a versioned path
   {
     "changes": [
       {
-        "host": "gerrit.example.com",
+        "instance": "default",
         "hash": "abc123...",
         "number": 12345,
         "waiting": false,
@@ -231,7 +231,7 @@ Examples below are conceptual. FastMCP exposes RPC endpoints at a versioned path
   POST /mcp/v1/rpc/add_change
   Authorization: Bearer <token>
 
-  Body: { "number": 12345, "host": "gerrit.example.com" }
+  Body: { "number": 12345, "instance": "default" }
 
   Response envelope (planned):
 

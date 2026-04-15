@@ -67,7 +67,7 @@ class BackgroundMCPServer:
                 continue
             payload.append(
                 {
-                    "host": ch.host,
+                    "instance": ch.instance,
                     "hash": ch.current_revision,
                     "waiting": ch.waiting,
                     "disabled": ch.disabled,
