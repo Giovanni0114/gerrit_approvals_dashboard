@@ -115,6 +115,10 @@ class App:
             self.status_msg = f"[red]cannot set automerge for change #{row} - no current revision known[/red]"
             return
 
+        if any(approval.label == "Automerge" for approval in ch.approvals):
+            self.status_msg = f"[yellow]Label Automerge already exists for change #{row}[/yellow]"
+            return
+
         # Use current_revision as operation key if available, else fall back to hash
         result = gerrit.query_set_automerge(ch.current_revision, ch.host, ch.port)
 

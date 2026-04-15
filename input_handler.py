@@ -209,6 +209,7 @@ def set_automerge(app_ctx: AppContext, ctx: Context) -> None:
     idx = ctx["idx"]
 
     indexes = parse_idx_notation(idx, len(app_ctx.changes))
+
     if indexes is None:
         app_ctx.status_msg = f"[red]Invalid idx: {idx} [/red]"
         return
