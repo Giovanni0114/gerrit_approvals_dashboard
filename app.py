@@ -75,6 +75,8 @@ class App:
             for ch, data in pool.map(_query, need):
                 self._store_result(ch, data)
 
+        self.changes_mtime = self.changes.save_changes()
+
     def _store_result(self, ch: TrackedChange, data: dict) -> None:
         if "error" in data:
             ch.error = data["error"]
@@ -101,8 +103,6 @@ class App:
 
         ch._snapshot = new_snapshot
         ch.submitted = is_submitted(data)
-
-        self.changes_mtime = self.changes.save_changes()
 
     def set_automerge(self, row: int) -> None:
         ch = self.changes.at(row - 1)
@@ -210,7 +210,7 @@ class App:
         """Build the display layout (header, optional prompt, table with hints in caption)."""
         header = build_header(ssh_requests=gerrit.ssh_request_count)
         table = build_table(
-            self.changes.get_all(),
+            self.changes,
             self.config.path,
             self.config.interval,
             self.status_msg,
@@ -225,7 +225,7 @@ class App:
     # --- AppContext interface (called by InputHandler) ---
 
     def toggle_waiting(self, row: int) -> None:
-        with self.changes.edit_change(row) as ch:
+        with self.changes.edit_change(row - 1) as ch:
             if ch is None:
                 self.status_msg = f"[red]no change at index {row}[/red]"
                 return
@@ -237,8 +237,10 @@ class App:
             else:
                 self.status_msg = f"[yellow]#{row} no longer waiting[/yellow]"
 
+        self.changes_mtime = self.changes.mtime()
+
     def toggle_deleted(self, row: int) -> None:
-        with self.changes.edit_change(row) as ch:
+        with self.changes.edit_change(row - 1) as ch:
             if ch is None:
                 self.status_msg = f"[red]no change at index {row}[/red]"
                 return
@@ -250,8 +252,10 @@ class App:
             else:
                 self.status_msg = f"[green]#{row} restored[/green]"
 
+        self.changes_mtime = self.changes.mtime()
+
     def toggle_disabled(self, row: int) -> None:
-        with self.changes.edit_change(row) as ch:
+        with self.changes.edit_change(row - 1) as ch:
             if ch is None:
                 self.status_msg = f"[red]no change at index {row}[/red]"
                 return
@@ -262,6 +266,8 @@ class App:
                 self.status_msg = f"[yellow]#{row} disabled[/yellow]"
             else:
                 self.status_msg = f"[green]#{row} re-enabled[/green]"
+
+        self.changes_mtime = self.changes.mtime()
 
     def toggle_all_waiting(self) -> None:
         candidates = self.changes.get_active()
@@ -331,10 +337,9 @@ class App:
                 count += 1
                 ch.deleted = True
 
-        self.changes_mtime = self.changes.save_changes()
-
         if count > 0:
             self.status_msg = f"[red]{count} submitted change(s) marked for deletion[/red]"
+            self.changes_mtime = self.changes.save_changes()
         else:
             self.status_msg = "[dim]No submitted changes to delete[/dim]"
 
@@ -345,6 +350,7 @@ class App:
 
         if deleted_hashes > 0:
             self.status_msg = f"[red]{deleted_hashes} change(s) permanently removed[/red]"
+            self.changes_mtime = self.changes.save_changes()
         else:
             self.status_msg = "[dim]Nothing to purge[/dim]"
 
@@ -357,6 +363,7 @@ class App:
 
         if count > 0:
             self.status_msg = f"[green]{count} change(s) restored[/green]"
+            self.changes.save_changes()
         else:
             self.status_msg = "[dim]Nothing to restore[/dim]"
 
@@ -393,12 +400,13 @@ class App:
 
     def quit(self) -> None:
         self.changes.remove_all_deleted()
+        self.changes.save_changes()
         self.running = False
 
     # --- Comments ---
 
     def add_comment(self, row: int, text: str) -> None:
-        with self.changes.edit_change(row) as ch:
+        with self.changes.edit_change(row - 1) as ch:
             if ch is None:
                 self.status_msg = f"[red]no change at index {row}[/red]"
                 return
@@ -406,7 +414,7 @@ class App:
             ch.comments.append(text)
 
     def replace_all_comments(self, row: int, text: str) -> None:
-        with self.changes.edit_change(row) as ch:
+        with self.changes.edit_change(row - 1) as ch:
             if ch is None:
                 self.status_msg = f"[red]no change at index {row}[/red]"
                 return
@@ -414,7 +422,7 @@ class App:
             ch.comments = [text]
 
     def edit_last_comment(self, row: int, text: str) -> None:
-        with self.changes.edit_change(row) as ch:
+        with self.changes.edit_change(row - 1) as ch:
             if ch is None:
                 self.status_msg = f"[red]no change at index {row}[/red]"
                 return
@@ -423,7 +431,7 @@ class App:
                 ch.comments[-1] = text
 
     def delete_comment(self, row: int, comment_idx: int) -> None:
-        with self.changes.edit_change(row) as ch:
+        with self.changes.edit_change(row - 1) as ch:
             if ch is None:
                 self.status_msg = f"[red]no change at index {row}[/red]"
                 return

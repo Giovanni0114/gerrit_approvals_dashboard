@@ -7,6 +7,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from changes import Changes
 from models import ApprovalEntry, TrackedChange
 
 
@@ -48,7 +49,7 @@ def approvals_to_text(approvals: Iterable[ApprovalEntry]) -> Text:
 
 
 def build_table(
-    changes: list[TrackedChange],
+    changes: Changes,
     config_path: Path,
     interval: float,
     status_msg: str = "",

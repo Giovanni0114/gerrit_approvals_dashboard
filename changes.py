@@ -93,8 +93,7 @@ class Changes:
     # --- changes file rw ---
 
     def load_changes(self, default_host: str | None, default_port: int | None):
-        self.changes.clear()
-
+        new_changes = []
         data = json.loads(self.path.read_text(encoding="utf-8"))
         if not isinstance(data, list):
             raise ValueError(f"Changes json file {self.path} is not a list")
@@ -116,18 +115,22 @@ class Changes:
             except (ValueError, TypeError) as ex:
                 raise ValueError(f"Invalid port for change '{commit_hash}': {entry.get('port')}") from ex
 
-            self.changes.append(
+            new_changes.append(
                 TrackedChange(
                     number=number,
                     host=host,
                     port=port,
                     waiting=bool(entry.get("waiting", False)),
                     disabled=bool(entry.get("disabled", False)),
+                    deleted=bool(entry.get("deleted", False)),
+                    submitted=bool(entry.get("submitted", False)),
                     comments=entry.get("comments", []),
                     # TODO: remove this, shoud not be here
                     current_revision=commit_hash,
                 )
             )
+
+        self.changes = new_changes
 
     def save_changes(self) -> float:
         data = []

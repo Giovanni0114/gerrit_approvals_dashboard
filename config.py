@@ -51,7 +51,7 @@ class AppConfig:
         try:
             self.default_port = int(config_data.get("default_port", DEFAULT_DEFAULT_PORT))
         except Exception as ex:
-            raise ValueError(f"Invalid default_port: {config_data.get('interval')}") from ex
+            raise ValueError(f"Invalid default_port: {config_data.get('default_port')}") from ex
 
         changes_file_filename = config_data.get("changes_file", DEFAULT_CHANGES_FILENAME)
         self.changes_path = (self.path.parent / changes_file_filename).resolve()
@@ -89,7 +89,7 @@ def generate_example_config(path: Path) -> None:
         return
     content = (
         "# Gerrit Approvals Dashboard — settings\n"
-        "[config]"
+        "[config]\n"
         "interval = 30\n"
         'changes_file = "./changes.json"  # path relative to this file\n'
         '# default_host = "gerrit.example.com"\n'
