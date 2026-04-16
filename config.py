@@ -85,7 +85,7 @@ class AppConfig:
                 GerritInstance(name="default", host=default_host, port=default_port, email=default_email)
             )
 
-        for ins_name in data["instance"]:
+        for ins_name in data.get("instance", {}):
             ins = data["instance"][ins_name]
             host = ins.get("host") or default_host
             port = ins.get("port") or default_port

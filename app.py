@@ -372,7 +372,7 @@ class App:
 
         if count > 0:
             self.status_msg = f"[green]{count} change(s) restored[/green]"
-            self.changes.save_changes()
+            self.changes_mtime = self.changes.save_changes()
         else:
             self.status_msg = "[dim]Nothing to restore[/dim]"
 
@@ -420,7 +420,7 @@ class App:
             self.changes_mtime = self.changes.save_changes()
             self._start_refresh()
         else:
-            self.status_msg = f"[dim] No new changes for on {len(self.config.instances)} instances[/dim]"
+            self.status_msg = f"[dim] No new changes on {len(self.config.instances)} instances[/dim]"
             pass
 
     def quit(self) -> None:
