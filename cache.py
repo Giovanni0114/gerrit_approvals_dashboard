@@ -63,8 +63,9 @@ class SshCache:
     def __init__(self, path: Path) -> None:
         self.path = path
         self._entries: dict[str, CacheEntry] = {}
+        self.load_file()
 
-    def load(self) -> None:
+    def load_file(self) -> None:
         if not self.path.exists():
             return
         try:
@@ -87,18 +88,18 @@ class SshCache:
                 _log.warning("skipping malformed cache entry %s: %s", key, exc)
         self._entries = loaded
 
-    def save(self) -> None:
+    def save_file(self) -> None:
         data = {key: entry.to_json() for key, entry in self._entries.items()}
         self.path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
-    def get(self, number: int, instance: str) -> CacheEntry | None:
-        return self._entries.get(_key(number, instance))
+    def get(self, change: TrackedChange) -> CacheEntry | None:
+        return self._entries.get(_key(change.number, change.instance))
 
-    def has(self, number: int, instance: str) -> bool:
-        return _key(number, instance) in self._entries
+    def has(self, change: TrackedChange) -> bool:
+        return _key(change.number, change.instance) in self._entries
 
-    def put(self, number: int, instance: str, entry: CacheEntry) -> None:
-        self._entries[_key(number, instance)] = entry
+    def cache(self, change: TrackedChange) -> None:
+        self._entries[_key(change.number, change.instance)] = CacheEntry.from_change(change)
 
     def evict(self, keep: set[tuple[int, str]]) -> int:
         keep_keys = {_key(n, i) for n, i in keep}
@@ -107,7 +108,7 @@ class SshCache:
         return before - len(self._entries)
 
     def hydrate(self, ch: TrackedChange) -> None:
-        if (entry := self.get(ch.number, ch.instance)) is None:
+        if (entry := self.get(ch)) is None:
             return
 
         ch.subject = entry.subject

@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from app import App
+from cache import SshCache
 from changes import Changes
 from config import (
     AppConfig,
@@ -60,10 +61,7 @@ def main() -> None:
     log_path = setup_logging(config.log_path)
     app_logger().info("startup config=%s logs=%s", config_path, log_path)
 
-    changes = Changes(config.changes_path)
-    changes.load_changes()
-
-    app = App(config, changes)
+    app = App(config)
     app.run()
 
 

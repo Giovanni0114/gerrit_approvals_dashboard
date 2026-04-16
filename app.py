@@ -30,7 +30,7 @@ _log = app_logger()
 EditorTarget = Literal["changes", "config"]
 
 
-def _store_result(ch: TrackedChange | None, data: dict, cache: SshCache | None = None) -> None:
+def _store_result(ch: TrackedChange | None, data: dict, cache: SshCache) -> None:
     if ch is None:
         return
 
@@ -60,14 +60,14 @@ def _store_result(ch: TrackedChange | None, data: dict, cache: SshCache | None =
     ch._snapshot = new_snapshot
     ch.submitted = is_submitted(data)
 
-    if cache is not None:
-        cache.put(ch.number, ch.instance, CacheEntry.from_change(ch))
+    cache.cache(ch)
 
 
 class App:
-    def __init__(self, config: AppConfig, changes: Changes) -> None:
+    def __init__(self, config: AppConfig) -> None:
         self.config = config
-        self.changes = changes
+        self.changes = Changes(self.config.changes_path)
+        self.cache = SshCache(self.config.cache_path)
 
         self.status_msg: str = ""
         self.exit_msg: str = ""
@@ -86,8 +86,6 @@ class App:
         self.config_mtime = self.config.mtime()
         self.changes_mtime = self.changes.mtime()
 
-        self.cache = SshCache(self.config.cache_path)
-        self.cache.load()
         self._sync_cache_with_changes()
 
         _log.info(
@@ -124,14 +122,14 @@ class App:
             for ch, data in pool.map(self._query, changes):
                 _store_result(ch, data, self.cache)
 
-        self.cache.save()
+        self.cache.save_file()
         self.changes_mtime = self.changes.save_changes()
 
     def query_active_changes(self) -> None:
         self._do_query(self.changes.get_running())
 
     def query_disabled_once(self) -> None:
-        uncached = [ch for ch in self.changes.get_disabled() if not self.cache.has(ch.number, ch.instance)]
+        uncached = [ch for ch in self.changes.get_disabled() if not self.cache.has(ch)]
         self._do_query(uncached)
 
     def set_automerge(self, row: int) -> None:

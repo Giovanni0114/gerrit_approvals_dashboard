@@ -18,6 +18,8 @@ class Changes:
         if not self.path.exists() or self.path.stat().st_size == 0:
             self.path.write_text(json.dumps([], indent=2) + "\n")
 
+        self.load_changes()
+
     def mtime(self):
         try:
             return self.path.stat().st_mtime
