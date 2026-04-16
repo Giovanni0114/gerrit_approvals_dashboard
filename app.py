@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from queue import Empty, Queue
 from threading import Event, Lock, Thread
-from typing import Iterable, Literal
+from typing import Literal
 
 from rich.console import Console, Group
 from rich.live import Live
@@ -522,12 +522,7 @@ class App:
             self.seconds_since_refresh = 0.0
             Thread(target=self._bg_refresh, daemon=True).start()
 
-    # --- MCP helpers ---
-
-    def get_changes(self) -> Iterable[TrackedChange]:
-        return self.changes.get_all()
-
-    # --- Opem WebUI ---
+    # --- Open WebUI ---
 
     def open_change_webui(self, row: int) -> None:
         ch = self.changes.at(row - 1)

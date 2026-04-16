@@ -4,7 +4,6 @@ from pathlib import Path
 
 _APP = "gcd.app"
 _SSH = "gcd.ssh"
-_MCP = "gcd.mcp"
 
 _MAX_BYTES = 5 * 1024 * 1024
 _BACKUPS = 5
@@ -36,7 +35,6 @@ def setup_logging(log_dir: Path) -> Path:
     log_dir.mkdir(parents=True, exist_ok=True)
     _build(_APP, log_dir, "app.log")
     _build(_SSH, log_dir, "ssh.log")
-    _build(_MCP, log_dir, "mcp.log")
     return log_dir
 
 
@@ -46,7 +44,3 @@ def app_logger() -> logging.Logger:
 
 def ssh_logger() -> logging.Logger:
     return logging.getLogger(_SSH)
-
-
-def mcp_logger() -> logging.Logger:
-    return logging.getLogger(_MCP)

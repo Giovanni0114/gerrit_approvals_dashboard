@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Iterable, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     import changes
@@ -62,7 +62,6 @@ class AppContext(Protocol):
     config: config.AppConfig
     status_msg: str
 
-    def get_changes(self) -> Iterable[TrackedChange]: ...
     def toggle_waiting(self, row: int) -> None: ...
     def toggle_deleted(self, row: int) -> None: ...
     def toggle_disabled(self, row: int) -> None: ...

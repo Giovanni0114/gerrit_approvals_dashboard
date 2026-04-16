@@ -109,27 +109,6 @@ The dashboard manages tracked Gerrit changes via SSH queries and stores them per
 ssh [-p <port>] <host> gerrit query --format=json --all-approvals <number>
 ```
 
-## MCP server (in development)
-
-The dashboard can optionally expose a [Model Context
-Protocol](https://modelcontextprotocol.io/) HTTP server, allowing AI assistants
-to query change status and perform actions remotely:
-
-```bash
-python3 gerrit_changes_dashboard.py --mcp
-```
-
-> [!WARNING]
-> Only 2 tools are implemented (`get_changes` and `quit`).
-> The full planned API surface includes 16+ tools for reading, adding, editing,
-> and deleting changes. See `mcp/README.md` and `mcp/tools.json` for details.
->
-> I'm considering dropping MCP development for CLI tool that AIs could use.
-
-Authentication uses Bearer tokens from `.authorized_tokens` (one token per
-line, currently not wired). This feature is under active development and the
-API may change significantly.
-
 ## Terminal notes
 
 Clickable links use OSC 8 hyperlink sequences. If running inside **tmux**, add

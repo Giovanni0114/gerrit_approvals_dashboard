@@ -163,10 +163,9 @@ uv run pytest -v     # Verbose output
 - Document Rich objects and state management clearly
 
 ### Logging
-- Use the custom `log(category, message, level="INFO")` function
-- Categories: "GERRIT", "CONFIG", "APP", "INPUT", etc.
+- Use loggers from `logs.py`: `app_logger()` for app events, `ssh_logger()` for SSH operations
 - Levels: "INFO", "WARNING", "ERROR"
-- Logs stored in `logs/{YYYYMMDD}-{HHMMSS}.log`
+- Log files: `app.log`, `ssh.log` under the configured `log_dir`
 
 ## Key Patterns
 
@@ -208,7 +207,6 @@ Run `uv run ruff check . --fix` to auto-correct most issues.
 
 ## Dependencies
 - **rich**: Terminal rendering and UI
-- **fastmcp** (optional): Model Context Protocol support
 
 ## Working with Features
 

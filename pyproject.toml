@@ -20,11 +20,6 @@ select = [
     "RUF"  # Ruff-specific rules
 ]
 
-[project.optional-dependencies]
-mcp = [
-    "fastmcp"
-]
-
 [dependency-groups]
 dev = ["pytest>=8", "mypy>=0.971", "ruff>=0.0.241"]
 

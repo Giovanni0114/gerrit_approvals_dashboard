@@ -32,12 +32,6 @@ def main() -> None:
         help="Generate example config.toml, then exit",
     )
 
-    parser.add_argument(
-        "--mcp",
-        action="store_true",
-        help="Start MCP server for gerrit changes",
-    )
-
     args = parser.parse_args()
     config_path = Path(args.config)
 
@@ -60,12 +54,6 @@ def main() -> None:
     changes.load_changes()
 
     app = App(config, changes)
-
-    if args.mcp:
-        from mcp_background import BackgroundMCPServer
-
-        BackgroundMCPServer(app)
-
     app.run()
 
 

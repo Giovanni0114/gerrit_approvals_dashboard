@@ -62,21 +62,6 @@ alias during a transition period or removed immediately — TBD.
 
 ---
 
-## EPIC002 | Expose MCP interface to all major operations
-
-The MCP server currently has limited coverage. This EPIC extends it to cover
-comments (feature 005) and all review operations (EPIC001) so AI assistants can
-perform the same actions available in the TUI.
-
-More sub-features will be defined once EPIC001 and feature 005 are complete.
-No point speccing this in detail before those land.
-
-### EPIC002-001 | Expose comment operations over MCP
-### EPIC002-002 | Expose review operations over MCP
-
----
-
-
 ## EPIC003 | Verification failure comments & analyzer system
 
 When a change has Verified -1/-2 (typically set by Jenkins/CI), the dashboard
@@ -100,7 +85,7 @@ that use case in mind but not implemented here.
 | EPIC003-003  | Analyzer configuration in TOML          | —               |
 | EPIC003-004  | Integrate analyzer into refresh cycle   | 001, 002, 003   |
 | EPIC003-005  | Display analyzer report in dashboard    | 004, feature 005|
-| EPIC003-006  | Expose analyzer report over MCP         | 004             |
+| EPIC003-006  | Expose analyzer report over CLI          | 004             |
 
 001, 002, 003 are independent and can be implemented in parallel. 004 is the
 integration point. 005 depends on feature 005 (user comments) being merged
@@ -134,27 +119,68 @@ loggers, each writing to its own file:
 - `app` for general app events (startup, config reload, add/fetch,
   automerge, quit, instance resolution failures)
 - `ssh` for SSH request journal.
-- `mcp` for MCP server start, auth rejections, tool invocations etc
 
 Log directory is configurable via `log_dir` in `[config]` (default `./log`,
 resolved relative to the config file).
 
 ---
 
-## 014 | SPIKE: Move from MCP to CLI
+## 014 | SPIKE: Move from MCP to CLI — **SPIKE COMPLETE**
 
-This EPIC will decide the fate of #EPIC002
+SPIKE result in `spec/features/014-cli-spike/spec.md`.
 
-["MCP is dead. Long live the CLI"](https://ejholmes.github.io/2026/02/28/mcp-is-dead-long-live-the-cli.html)
+**Recommendation: Option A — CLI only (drop MCP).**
 
-I analyzed how it should work. My first idea is that
-`./gerrit_changes_dashboard.py` will start a server and we will have to create
-CLI tool that via some request will grab data, delete, append, call operatons,
-add comments, use whole goods from the inventory.
-But, it have to connect to it somehow.
-So there still concern about the interface. Isn't having MCP server in place
-almost like having some REST API but you can ALSO connect AI to them?
-So maybe CLI + MCP is not that bad idea?
+Key findings:
+- 90% of operations work standalone against `config.toml` + `changes.json`
+  (the TUI auto-reloads on file changes via mtime polling)
+- Existing modules (`gerrit.py`, `config.py`, `changes.py`) are already
+  decoupled from the TUI and can be wired into argparse directly
+- Only `quit` truly needs IPC to the running TUI (and `kill` works for that)
+- A CLI with `--json` output serves both humans and AI assistants better
+  than MCP (composable, debuggable, zero dependencies)
+- Completing EPIC002 (14+ tools, auth, envelope) is far more work for
+  less payoff
+- If live in-process state is ever needed, a Unix socket extension (Option D)
+  can be added later
+
+This SPIKE supersedes EPIC002 — if CLI is built, EPIC002 becomes unnecessary.
+
+Open questions: CLI naming, whether to persist approvals in JSON, index-vs-number
+addressing. See full spec for details.
+
+---
+
+## 017 | SSH data cache
+
+Separate Gerrit-fetched data from user-authored state. A new `cache.json` file
+stores everything that comes from SSH queries (subject, project, url, hash,
+approvals), keyed by `(number, instance)`.
+
+- On startup: load cache, hydrate `TrackedChange` fields immediately (no SSH
+  round-trip needed to show last-known data)
+- On refresh: overwrite cache entries with fresh SSH data
+- Disabled changes: query ONLY when no cache exists for them
+- On startup: evict cache entries for changes no longer in `changes.json`
+- `changes.json` becomes purely user state (number, instance, flags, comments)
+  — `hash` and `submitted` move to cache
+
+Full spec in `spec/features/017-ssh-cache/spec.md`.
+
+---
+
+## 018 | Changes auto-save and internal mtime tracking
+
+`Changes` should own its own persistence. Today `app.py` calls `save_changes()`
+in 14 places and tracks `changes_mtime` externally. This feature adds:
+
+- Internal `_mtime` tracking (remove `self.changes_mtime` from `App`)
+- Dirty flag (`_dirty`) — skip writes when nothing changed
+- `flush()` — replaces `save_changes()`, no-op when clean
+- `has_external_changes()` — replaces mtime comparison in `reload_config()`
+- `mark_dirty()` — for mutations outside context managers
+
+Depends on 017 (cache). Full spec in `spec/features/018-changes-auto-save/spec.md`.
 
 ---
 
