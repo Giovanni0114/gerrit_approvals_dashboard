@@ -111,23 +111,7 @@ or some similar effect to show additional information on tab click
 
 ---
 
-## 013 | Logging — **IN PROGRESS** (branch: feature/013-logging)
-The app had a `log()` stub in `utils.py` that was never wired up. Replaced with
-a proper logging module with rotating (5 MB × 5 backups) and three named
-loggers, each writing to its own file:
-
-- `app` for general app events (startup, config reload, add/fetch,
-  automerge, quit, instance resolution failures)
-- `ssh` for SSH request journal.
-
-Log directory is configurable via `log_dir` in `[config]` (default `./log`,
-resolved relative to the config file).
-
----
-
 ## 014 | SPIKE: Move from MCP to CLI — **SPIKE COMPLETE**
-
-SPIKE result in `spec/features/014-cli-spike/spec.md`.
 
 **Recommendation: Option A — CLI only (drop MCP).**
 
@@ -151,39 +135,6 @@ addressing. See full spec for details.
 
 ---
 
-## 017 | SSH data cache
-
-Separate Gerrit-fetched data from user-authored state. A new `cache.json` file
-stores everything that comes from SSH queries (subject, project, url, hash,
-approvals), keyed by `(number, instance)`.
-
-- On startup: load cache, hydrate `TrackedChange` fields immediately (no SSH
-  round-trip needed to show last-known data)
-- On refresh: overwrite cache entries with fresh SSH data
-- Disabled changes: query ONLY when no cache exists for them
-- On startup: evict cache entries for changes no longer in `changes.json`
-- `changes.json` becomes purely user state (number, instance, flags, comments)
-  — `hash` and `submitted` move to cache
-
-Full spec in `spec/features/017-ssh-cache/spec.md`.
-
----
-
-## 018 | Changes auto-save and internal mtime tracking
-
-`Changes` should own its own persistence. Today `app.py` calls `save_changes()`
-in 14 places and tracks `changes_mtime` externally. This feature adds:
-
-- Internal `_mtime` tracking (remove `self.changes_mtime` from `App`)
-- Dirty flag (`_dirty`) — skip writes when nothing changed
-- `flush()` — replaces `save_changes()`, no-op when clean
-- `has_external_changes()` — replaces mtime comparison in `reload_config()`
-- `mark_dirty()` — for mutations outside context managers
-
-Depends on 017 (cache). Full spec in `spec/features/018-changes-auto-save/spec.md`.
-
----
-
 ## 015 | Navigation and selecting using arrows
 
 If the arrow is used when index is expected:
@@ -202,8 +153,22 @@ If the arrow is used when index is expected:
 
 ---
 
-## 016 | 
+## 016 | Design CLI tool
 
+---
 
+## 018 | Changes auto-save and internal mtime tracking
 
+`Changes` should own its own persistence. Today `app.py` calls `save_changes()`
+in 14 places and tracks `changes_mtime` externally. This feature adds:
+
+- Internal `_mtime` tracking (remove `self.changes_mtime` from `App`)
+- Dirty flag (`_dirty`) — skip writes when nothing changed
+- `flush()` — replaces `save_changes()`, no-op when clean
+- `has_external_changes()` — replaces mtime comparison in `reload_config()`
+- `mark_dirty()` — for mutations outside context managers
+
+Depends on 017 (cache). Full spec in `spec/features/018-changes-auto-save/spec.md`.
+
+---
 
