@@ -156,7 +156,6 @@ No point speccing this in detail before those land.
 ### EPIC002-001 | Expose comment operations over MCP
 ### EPIC002-002 | Expose review operations over MCP
 
-
 ---
 
 ## 007 | Some indexes should support more advanced notation — **DONE**
@@ -189,6 +188,7 @@ There should be two new keybinds
 Editor should be configurable, but we should use "EDITOR" env variable by default.
 After closing editor, config and approvals should be reloaded.
 
+---
 
 ## EPIC003 | Verification failure comments & analyzer system
 
@@ -221,6 +221,8 @@ first. 006 is a leaf task.
 
 Full specs are in `spec/features/EPIC003-verification-comments/`.
 
+---
+
 ## 010 | Add spinner and countdown to header
 
 Currently header shows just time of refreshed, and this is often misleading. I
@@ -228,13 +230,33 @@ want to add some sort of rich.Spinner to indicate when operations are running
 in the background. Also, current time should be replaced with countdown to next
 planned refresh.
 
+---
+
 ## 011 | Make a SPIKE for the possibility of layering interface
 
 I would like to be able to create some sort of overlay screen, floating window,
 or some similar effect to show additional information on tab click
 
+---
 
-## 012 | Change "approval" to "changes" whenever it fits
+## 012 | Change "approval" to "changes" whenever it fits - **DONE**
 
 In this project i use "approval" a lot, I think "changes" is more fitting
+
+---
+
+## 013 | Logging
+
+The app had a `log()` stub in `utils.py` that was never wired up. Replaced with
+a proper logging module with rotating (5 MB × 5 backups) and three named
+loggers, each writing to its own file:
+
+- `app` for general app events (startup, config reload, add/fetch,
+  automerge, quit, instance resolution failures)
+- `ssh` for SSH request journal.
+- `mcp` for MCP server start, auth rejections, tool invocations etc
+
+Log directory is configurable via `log_dir` in `[config]` (default `./log`,
+resolved relative to the config file).
+
 
