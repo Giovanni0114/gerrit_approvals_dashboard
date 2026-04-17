@@ -109,6 +109,7 @@ class App:
     def _query(self, ch: TrackedChange) -> tuple[TrackedChange | None, dict]:
         instance = self.config.get_instance_by_name(ch.instance)
         if instance is None:
+            ch.error = f'unknown instance "{ch.instance}"'
             _log.warning("query skipped: unknown instance %r for change %s", ch.instance, ch.number)
             return None, {}
 

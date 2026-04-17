@@ -92,7 +92,7 @@ def build_table(
         }
 
         if ch.error:
-            table.add_row(str(idx), str(ch.number), Text(ch.error, style="red"), "", "", "")
+            table.add_row(str(idx), str(ch.number), Text(f"ERROR: {ch.error}", style="red"), "", "", "")
             continue
 
         if ch.url:
