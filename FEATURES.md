@@ -111,9 +111,7 @@ or some similar effect to show additional information on tab click
 
 ---
 
-## 014 | SPIKE: Move from MCP to CLI — **SPIKE COMPLETE**
-
-**Recommendation: Option A — CLI only (drop MCP).**
+## 014 | SPIKE: Move from MCP to CLI
 
 Key findings:
 - 90% of operations work standalone against `config.toml` + `changes.json`
@@ -129,9 +127,6 @@ Key findings:
   can be added later
 
 This SPIKE supersedes EPIC002 — if CLI is built, EPIC002 becomes unnecessary.
-
-Open questions: CLI naming, whether to persist approvals in JSON, index-vs-number
-addressing. See full spec for details.
 
 ---
 
