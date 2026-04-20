@@ -124,6 +124,12 @@ planned refresh.
 
 ---
 
+## 020 | Add url handling to the comments
+
+So if comment contains a link, it should display just hostname
+and generates clickable link just like number is clickable.
+
+
 # Dev Stories
 
 ---

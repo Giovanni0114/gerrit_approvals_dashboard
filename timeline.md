@@ -12,6 +12,7 @@ So, it's usable
 ### nice-to-have
   - [ ] 010: spinner
   - [ ] 015: arrows
+  - [ ] 020: link in comments
 
 ----
 > HERE WE CREATE TESTS
@@ -21,6 +22,7 @@ So, it's usable
 So, it's stable
 
   - [ ] fully functional and stable TUI with all features covered
+  - [ ] system wide usage of dashboard - not just from repo directory
 
 ## v1.x
 So, it's nice
