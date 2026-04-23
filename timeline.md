@@ -4,7 +4,7 @@
 So, it's usable
 
 ### alpha-1
-  - [ ] EPIC001 done - review operations
+  - [x] EPIC001 done - review operations
 
 ### alpha-2
   - [ ] EPIC003 done - analyzer plugins
@@ -27,7 +27,10 @@ So, it's stable
 ## v1.x
 So, it's nice
 
+### v1.0
   - [ ] fully functional and stable CLI with all features covered
+
+### v1.1
   - [ ] Gerrit REST API functionalities
 
 

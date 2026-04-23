@@ -12,56 +12,6 @@ inside the EPIC folder.
 
 ---
 
-## EPIC001 | Review operations on a change
-
-The `gerrit review` command supports a wide range of operations beyond setting
-labels: abandon, rebase, restore, submit, code-review score, custom messages, etc.
-
-Right now only `set automerge` is exposed. This EPIC adds a dedicated `Review`
-submenu (`<Space>` + `r`) covering the most useful operations. Feature 006 is a
-prerequisite — review commands must target the latest patchset, not the hash
-stored in config.
-
-Note: `<Space>` + `r` is currently unbound (bare `r` without Space does refresh),
-so there is no keybind conflict.
-
-### EPIC001-001 | Add `Review` submenu to keybinds
-
-Add `<Space>` + `r` as the entry point for a new Review submenu, following the
-same input-handler pattern as the existing leader actions.
-
-### EPIC001-002 | Abandon a change
-
-Add `<Space>` + `r` + `<idx>` + `abandon` to run `gerrit review --abandon`.
-Should ask for confirmation before executing.
-
-### EPIC001-003 | Rebase a change
-
-Add `<Space>` + `r` + `<idx>` + `rebase` to run `gerrit review --rebase`.
-
-### EPIC001-004 | Restore an abandoned change
-
-Add `<Space>` + `r` + `<idx>` + `restore` to run `gerrit review --restore`.
-
-### EPIC001-005 | Set Code-Review score
-
-Add `<Space>` + `r` + `<idx>` + `cr` to run `gerrit review --code-review N`.
-Prompts for a value from -2 to +2. Should display the meaning of each value
-during the prompt.
-
-### EPIC001-006 | Submit a change
-
-Add `<Space>` + `r` + `<idx>` + `submit` to run `gerrit review --submit`.
-Must ask for confirmation before executing since this is irreversible.
-
-### EPIC001-007 | Move `set automerge` into the Review submenu
-
-The current `<Space>` + `s` binding for automerge is a one-off. It should become
-part of the Review submenu for consistency. The old binding can be kept as an
-alias during a transition period or removed immediately — TBD.
-
----
-
 ## EPIC003 | Verification failure comments & analyzer system
 
 When a change has Verified -1/-2 (typically set by Jenkins/CI), the dashboard
@@ -93,7 +43,6 @@ first. 006 is a leaf task.
 
 Full specs are in `spec/features/EPIC003-verification-comments/` but only on
 `origin/epic/003-verification-comments` branch
-
 
 ---
 
