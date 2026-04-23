@@ -26,9 +26,6 @@ class Changes:
         except OSError:
             return 0.0
 
-    def __len__(self) -> int:
-        return len(self.changes)
-
     def count(self) -> int:
         return len(self.changes)
 
