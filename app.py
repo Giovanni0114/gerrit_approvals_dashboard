@@ -83,8 +83,7 @@ class App:
         self.pending_editor: EditorTarget | None = None
         self._pause_keys = Event()
 
-        self.config_mtime = self.config.mtime()
-        self.changes_mtime = self.changes.mtime()
+        self.needs_visual_update = False
 
         self._sync_cache_with_changes()
 
@@ -104,7 +103,7 @@ class App:
         for ch in tracked:
             self.cache.hydrate(ch)
 
-    def _resolve_index_for_running(self, rows: Index) -> list[TrackedChange]:
+    def _resolve_index(self, rows: Index) -> list[TrackedChange]:
         changes = self.changes.get_running() if rows.wildcard else rows.resolve(self.changes)
         if not changes:
             self.status_msg = "[red]No matching changes for operation[/red]"
@@ -130,9 +129,6 @@ class App:
             for ch, data in pool.map(self._query, changes):
                 _store_result(ch, data, self.cache)
 
-        self.cache.save_file()
-        self.changes_mtime = self.changes.save_changes()
-
     def query_active_changes(self) -> None:
         self._do_query(self.changes.get_running())
 
@@ -143,7 +139,7 @@ class App:
     # --- Review methods ---
 
     def review_set_automerge(self, rows: Index) -> None:
-        for ch in self._resolve_index_for_running(rows):
+        for ch in self._resolve_index(rows):
             self._review_set_automerge(ch)
 
     def _review_set_automerge(self, ch: TrackedChange) -> None:
@@ -177,7 +173,7 @@ class App:
             self._start_refresh()
 
     def review_code_review(self, rows: Index, score: int) -> None:
-        for ch in self._resolve_index_for_running(rows):
+        for ch in self._resolve_index(rows):
             self._review_code_review(ch, score)
 
     def _review_code_review(self, ch: TrackedChange, score: int) -> None:
@@ -212,7 +208,7 @@ class App:
             self._start_refresh()
 
     def review_abandon(self, rows: Index) -> None:
-        for ch in self._resolve_index_for_running(rows):
+        for ch in self._resolve_index(rows):
             self._review_abandon(ch)
 
     def _review_abandon(self, ch: TrackedChange) -> None:
@@ -236,7 +232,7 @@ class App:
             self._start_refresh()
 
     def review_restore(self, rows: Index) -> None:
-        for ch in self._resolve_index_for_running(rows):
+        for ch in self._resolve_index(rows):
             self._review_restore(ch)
 
     def _review_restore(self, ch: TrackedChange) -> None:
@@ -260,7 +256,7 @@ class App:
             self._start_refresh()
 
     def review_submit(self, rows: Index) -> None:
-        for ch in self._resolve_index_for_running(rows):
+        for ch in self._resolve_index(rows):
             self._review_submit(ch)
 
     def _review_submit(self, ch: TrackedChange) -> None:
@@ -284,7 +280,7 @@ class App:
             self._start_refresh()
 
     def review_rebase(self, rows: Index) -> None:
-        for ch in self._resolve_index_for_running(rows):
+        for ch in self._resolve_index(rows):
             self._review_rebase(ch)
 
     def _review_rebase(self, ch: TrackedChange) -> None:
@@ -310,7 +306,7 @@ class App:
     # --- Open WebUI ---
 
     def open_change_webui(self, rows: Index) -> None:
-        for ch in self._resolve_index_for_running(rows):
+        for ch in self._resolve_index(rows):
             self._open_change_webui(ch)
 
     def _open_change_webui(self, ch: TrackedChange) -> None:
@@ -377,16 +373,17 @@ class App:
         header = build_header(ssh_requests=gerrit.ssh_request_count)
         table = build_table(
             self.changes,
-            self.config.path,
-            self.config.interval,
+            self.config,
             self.status_msg,
             gerrit.ssh_request_count,
             self.input.hints(),
         )
         return build_layout(header, table, prompt=prompt_msg)
 
-    def visual_update(self, live: Live) -> None:
-        live.update(self.build(self.input.prompt()))
+    def visual_update_if_needed(self, live: Live, force: bool = False) -> None:
+        if self.needs_visual_update:
+            live.update(self.build(self.input.prompt()))
+            self.needs_visual_update = False
 
     # --- AppContext interface (called by InputHandler) ---
 
@@ -467,7 +464,6 @@ class App:
         new_change = TrackedChange(number=number, instance=instance)
         self.changes.append(new_change)
         self.status_msg = f"[green]Added {number} @ {instance}[/green]"
-        self.changes_mtime = self.changes.save_changes()
         _log.info("change added number=%d instance=%s", number, instance)
 
     def delete_all_submitted(self) -> None:
@@ -479,7 +475,6 @@ class App:
 
         if count > 0:
             self.status_msg = f"[red]{count} submitted change(s) marked for deletion[/red]"
-            self.changes_mtime = self.changes.save_changes()
         else:
             self.status_msg = "[dim]No submitted changes to delete[/dim]"
 
@@ -490,7 +485,6 @@ class App:
 
         if deleted_hashes > 0:
             self.status_msg = f"[red]{deleted_hashes} change(s) permanently removed[/red]"
-            self.changes_mtime = self.changes.save_changes()
         else:
             self.status_msg = "[dim]Nothing to purge[/dim]"
 
@@ -503,7 +497,6 @@ class App:
 
         if count > 0:
             self.status_msg = f"[green]{count} change(s) restored[/green]"
-            self.changes_mtime = self.changes.save_changes()
         else:
             self.status_msg = "[dim]Nothing to restore[/dim]"
 
@@ -550,36 +543,33 @@ class App:
 
         if added:
             self.status_msg = f"[green]Added {added} change(s)[/green]"
-            self.changes_mtime = self.changes.save_changes()
             self._start_refresh()
         else:
             self.status_msg = f"[dim] No new changes on {len(self.config.instances)} instances[/dim]"
 
     def quit(self) -> None:
         self.changes.remove_all_deleted()
-        self.changes_mtime = self.changes.save_changes()
-        self.exit_msg = f"{len(self.changes.get_all())} change(s) saved. Bye!"
-        _log.info("app quit tracked=%d", self.changes.count())
+        _log.info("app quit")
         self.running = False
 
     # --- Comments ---
 
     def add_comment(self, rows: Index, text: str) -> None:
-        for ch in self._resolve_index_for_running(rows):
+        for ch in self._resolve_index(rows):
             self._add_comment(ch, text)
 
     def _add_comment(self, ch: TrackedChange, text: str) -> None:
         ch.comments.append(text)
 
     def replace_all_comments(self, rows: Index, text: str) -> None:
-        for ch in self._resolve_index_for_running(rows):
+        for ch in self._resolve_index(rows):
             self._replace_all_comments(ch, text)
 
     def _replace_all_comments(self, ch: TrackedChange, text: str) -> None:
         ch.comments = [text]
 
     def edit_last_comment(self, rows: Index, text: str) -> None:
-        for ch in self._resolve_index_for_running(rows):
+        for ch in self._resolve_index(rows):
             self._edit_last_comment(ch, text)
 
     def _edit_last_comment(self, ch: TrackedChange, text: str) -> None:
@@ -587,7 +577,7 @@ class App:
             ch.comments[-1] = text
 
     def delete_comment(self, rows: Index, comment_idx: Index) -> None:
-        for ch in self._resolve_index_for_running(rows):
+        for ch in self._resolve_index(rows):
             self._delete_comment(ch, comment_idx)
 
     def _delete_comment(self, ch: TrackedChange, comment_idx: Index) -> None:
@@ -634,18 +624,14 @@ class App:
 
     def reload_config(self, force: bool = False) -> bool:
         """Check both files for changes and reload if needed. Returns True if either was reloaded."""
-        new_toml_mtime = self.config.mtime()
-        new_changes_mtime = self.changes.mtime()
+        self.cache.save_file()
+        self.changes.save_changes()
 
-        if not force and new_toml_mtime <= self.config_mtime and new_changes_mtime <= self.changes_mtime:
+        if not force and not self.config.is_file_changed() and not self.changes.is_file_changed():
             return False
         try:
             self.config.load_config()
-            self.config_mtime = new_toml_mtime
-
             self.changes.load_changes()
-            self.changes_mtime = new_changes_mtime
-
             self._sync_cache_with_changes()
 
             self.status_msg = "[green]Config reloaded[/green]"
@@ -653,8 +639,6 @@ class App:
             return True
         except Exception as exc:
             self.status_msg = f"[red]Config error: {exc}[/red]"
-            self.config_mtime = new_toml_mtime
-            self.changes_mtime = new_changes_mtime
             _log.error("config reload failed: %s", exc)
             return False
 
@@ -678,55 +662,55 @@ class App:
                 while self.running:
                     time.sleep(self.config.ui_refresh_interval_sec)
                     self.seconds_since_refresh += self.config.ui_refresh_interval_sec
-                    needs_visual_update = False
 
                     # Check if background refresh just completed
                     if self.refresh_pending and self.refresh_done.is_set():
                         self.refresh_pending = False
-                        needs_visual_update = True
+                        self.needs_visual_update = True
 
-                    # Process all pending keys
-                    while True:
-                        try:
-                            key = self.key_queue.get_nowait()
-                        except Empty:
-                            break
-                        self.input.handle_key(key)
-                        if not self.running:
-                            break
-
-                        needs_visual_update = True
-
+                    self._check_pending_input()
 
                     if not self.running:
-                        break
+                        return
 
-                    if self.pending_editor:
-                        target = self.pending_editor
-                        self.pending_editor = None
-
-                        live.stop()
-                        try:
-                            self._run_editor(target)
-                            self.reload_config(force=True)
-                        finally:
-                            live.start()
-                        needs_visual_update = True
+                    self._check_pending_editor(live)
 
                     if self.reload_config():
                         self._start_refresh()
-                        self.visual_update(live)
-                        needs_visual_update = False
-
+                        self.needs_visual_update = True
                     elif self.seconds_since_refresh >= self.config.interval:
                         self.status_msg = ""
                         self._start_refresh()
-                        self.visual_update(live)
-                        needs_visual_update = False
-                    elif needs_visual_update:
-                        self.visual_update(live)
-                        needs_visual_update = False
+                        self.needs_visual_update = True
+
+                    self.visual_update_if_needed(live)
+
         except KeyboardInterrupt:
             pass
         finally:
-            _console.print(f"\n[dim]Stopped. {self.exit_msg}[/dim]")
+            self.changes.save_changes()
+            _console.print(f"\n[dim]Stopped. {self.exit_msg} {self.changes.count()} change(s) saved. Bye![/dim]")
+
+    def _check_pending_input(self) -> None:
+        while True:
+            try:
+                key = self.key_queue.get_nowait()
+            except Empty:
+                break
+            self.input.handle_key(key)
+            self.needs_visual_update = True
+            if not self.running:
+                break
+
+    def _check_pending_editor(self, live: Live) -> None:
+        if self.pending_editor:
+            target = self.pending_editor
+            self.pending_editor = None
+
+            live.stop()
+            try:
+                self._run_editor(target)
+                self.reload_config(force=True)
+            finally:
+                live.start()
+            self.needs_visual_update = True

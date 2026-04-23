@@ -23,30 +23,49 @@ class GerritInstance:
     email: str | None
 
 
+_TRACKED = frozenset(
+    {
+        "deleted",
+        "submitted",
+        "disabled",
+        "waiting",
+        "comments",
+        "approvals",
+    }
+)
+_SENTINEL = object()
+
+
 @dataclass
 class TrackedChange:
     number: int
     instance: str = "default"
-    comments: list[str] = field(default_factory=list)
 
-    # --- state ---
+    comments: list[str] = field(default_factory=list)
+    approvals: list[ApprovalEntry] = field(default_factory=list)
+
     deleted: bool = False
     submitted: bool = False
     disabled: bool = False
     waiting: bool = False
 
     # --- data from gerrit ---
-    # TODO: DELETE THIS, should not have duplicated data
     subject: str | None = None
     project: str | None = None
     url: str | None = None
     current_revision: str | None = None
-
-    approvals: list[ApprovalEntry] = field(default_factory=list)
     error: str | None = None
-
-    # --- Internal: approval snapshot for change-detection ---
     _snapshot: frozenset[tuple[str, str, str]] = field(default_factory=frozenset, repr=False, compare=False)
+
+    modified: bool = field(default=False, init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "modified", False)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        if name in _TRACKED and getattr(self, name, _SENTINEL) != value:
+            super().__setattr__("modified", True)
+        super().__setattr__(name, value)
 
     def is_running(self) -> bool:
         """non-submitted && non-deleted && non-disabled"""

@@ -64,6 +64,16 @@ class SshCache:
         self.path = path
         self._entries: dict[str, CacheEntry] = {}
         self.load_file()
+        self._file_mtime: float = self._mtime()
+
+    def _mtime(self) -> float:
+        try:
+            return self.path.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    def is_file_changed(self) -> bool:
+        return self._mtime() != self._file_mtime
 
     def load_file(self) -> None:
         if not self.path.exists():
