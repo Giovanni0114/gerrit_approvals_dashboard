@@ -137,11 +137,23 @@ def fetch_my_changes(app_ctx: AppContext, ctx: Context) -> None:
 
 def comment_add(app_ctx: AppContext, ctx: Context) -> None:
     """Add a comment to a change."""
-    app_ctx.add_comment(int(ctx["idx"]), ctx["text"])
+
+    idx = parse_idx_notation(ctx["idx"], len(app_ctx.changes))
+    if idx is None or len(idx) != 1:
+        app_ctx.status_msg = f"[red]Invalid idx for comment_add: {ctx['idx']}[/red]"
+        return
+
+    app_ctx.add_comment(idx[0], ctx["text"])
 
 
 def comment_replace_all(app_ctx: AppContext, ctx: Context) -> None:
     """Replace all comments with a single new comment."""
+
+    idx = parse_idx_notation(ctx["idx"], len(app_ctx.changes))
+    if idx is None or len(idx) != 1:
+        app_ctx.status_msg = f"[red]Invalid idx for comment_add: {ctx['idx']}[/red]"
+        return
+
     app_ctx.replace_all_comments(int(ctx["idx"]), ctx["text"])
 
 

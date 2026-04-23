@@ -29,9 +29,6 @@ class Changes:
     def __len__(self) -> int:
         return len(self.changes)
 
-    def __getitem__(self, idx: int) -> TrackedChange:
-        return self.changes[idx]
-
     def count(self) -> int:
         return len(self.changes)
 
