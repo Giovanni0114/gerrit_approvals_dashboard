@@ -48,6 +48,9 @@ def approvals_to_text(approvals: Iterable[ApprovalEntry]) -> Text:
 
 
 def enumerate_comments(comments: Iterable[str]) -> str:
+    if len(comments) == 1:
+        return comments[0]
+
     return "\n".join(f"{idx}. {comment}" for idx, comment in enumerate(comments, 1))
 
 
