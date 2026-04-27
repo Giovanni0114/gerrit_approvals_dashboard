@@ -124,10 +124,15 @@ class Changes:
             )
 
         self._changes = new_changes
+        self._list_dirty = False
         self._file_mtime = self._mtime()
 
     def save_changes(self) -> bool:
         if self.has_any_modified_changes():
+            if self.is_file_changed():
+                # TODO handle this better, maybe  try to merge changes instead of just throwing an error
+                raise RuntimeError("Conflict detected: changes file has been modified by another process")
+
             data = []
 
             for ch in self._changes:

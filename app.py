@@ -110,6 +110,13 @@ class App:
 
         return changes
 
+    def _resolve_index_for_all(self, rows: Index) -> list[TrackedChange]:
+        changes = self.changes.get_all() if rows.wildcard else rows.resolve(self.changes)
+        if not changes:
+            self.status_msg = "[red]No matching changes for operation[/red]"
+
+        return changes
+
     # --- Query methods ---
 
     def _query(self, ch: TrackedChange) -> tuple[TrackedChange | None, dict]:
@@ -411,7 +418,7 @@ class App:
             ch.deleted = not ch.deleted
 
     def toggle_all_deleted(self) -> None:
-        if not (candidates := self.changes.get_active()):
+        if not (candidates := self.changes.get_all()):
             self.status_msg = "[dim]No active changes to toggle[/dim]"
             return
 
@@ -555,21 +562,21 @@ class App:
     # --- Comments ---
 
     def add_comment(self, rows: Index, text: str) -> None:
-        for ch in self._resolve_index(rows):
+        for ch in self._resolve_index_for_all(rows):
             self._add_comment(ch, text)
 
     def _add_comment(self, ch: TrackedChange, text: str) -> None:
         ch.comments = [*ch.comments, text]
 
     def replace_all_comments(self, rows: Index, text: str) -> None:
-        for ch in self._resolve_index(rows):
+        for ch in self._resolve_index_for_all(rows):
             self._replace_all_comments(ch, text)
 
     def _replace_all_comments(self, ch: TrackedChange, text: str) -> None:
         ch.comments = [text]
 
     def edit_last_comment(self, rows: Index, text: str) -> None:
-        for ch in self._resolve_index(rows):
+        for ch in self._resolve_index_for_all(rows):
             self._edit_last_comment(ch, text)
 
     def _edit_last_comment(self, ch: TrackedChange, text: str) -> None:
@@ -579,7 +586,7 @@ class App:
             ch.comments = new
 
     def delete_comment(self, rows: Index, comment_idx: Index) -> None:
-        for ch in self._resolve_index(rows):
+        for ch in self._resolve_index_for_all(rows):
             self._delete_comment(ch, comment_idx)
 
     def _delete_comment(self, ch: TrackedChange, comment_idx: Index) -> None:
@@ -588,7 +595,7 @@ class App:
             return
 
         new = list(ch.comments)
-        for idx in sorted(comment_idx.values, reverse=True):
+        for idx in sorted([i - 1 for i in comment_idx.values], reverse=True):
             if 0 <= idx < len(new):
                 new.pop(idx)
         ch.comments = new

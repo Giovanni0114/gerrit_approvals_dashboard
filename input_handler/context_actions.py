@@ -52,6 +52,10 @@ def handle_deletion(app_ctx: AppContext, ctx: Context) -> None:
         app_ctx.restore_all()
         return
 
+    if ctx["idx"] == "c":
+        app_ctx.delete_all_submitted()
+        return
+
     if (idx := parse_idx_notation(ctx["idx"])) is None:
         app_ctx.status_msg = f"[red]Invalid idx parsed from: {ctx['idx']}[/red]"
         return
@@ -80,7 +84,7 @@ def set_automerge(app_ctx: AppContext, ctx: Context) -> None:
         app_ctx.status_msg = f"[red]Invalid idx parsed from: {ctx['idx']}[/red]"
         return
 
-    app_ctx.set_automerge(idx)
+    app_ctx.review_set_automerge(idx)
 
 
 def open_config_in_editor(app_ctx: AppContext, ctx: Context) -> None:

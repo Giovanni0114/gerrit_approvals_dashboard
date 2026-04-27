@@ -251,23 +251,22 @@ class InputHandler:
         self.reset()
 
     def _prefill_for_field(self, action: LeafAction, field: InputField) -> str | None:
-        """Return prefill for the field. None means the flow was aborted (state already reset)."""
         if action.action is comment_edit_last and field.name == "text":
-            idx = parse_idx_notation(self.context["idx"], len(self.app_context.changes))
+            idx = parse_idx_notation(self.context["idx"])
 
-            if idx is None or len(idx) != 1:
+            if idx is None or not idx.single():
                 self.app_context.status_msg = f"[red]Invalid idx: {idx}[/red]"
                 self.reset()
                 return None
 
-            comments = self.app_context.changes.at(idx - 1)
+            change = self.app_context.changes.at(idx - 1)
 
-            if not comments or not comments.comments:
+            if not change or not change.comments:
                 self.app_context.status_msg = "[red]No comments to edit[/red]"
                 self.reset()
                 return None
 
-            return comments.comments[-1]
+            return change.comments[-1]
         return ""
 
     def reset(self) -> None:

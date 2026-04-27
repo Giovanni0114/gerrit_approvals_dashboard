@@ -21,7 +21,7 @@ class InputField:
 
 
 def parse_idx_notation(raw: str) -> Index | None:
-    """Parse advanced index notation into a sorted list of unique 1-based indexes.
+    """Parse advanced index notation into a Index object.
 
     Supported formats:
     - Single index: ``"3"``
@@ -39,7 +39,7 @@ def parse_idx_notation(raw: str) -> Index | None:
         return None
 
     if stripped == "a":
-        return Index(set(), wildcard=True)
+        return Index(frozenset(), wildcard=True)
 
     result: set[int] = set()
     for part in stripped.split(","):
@@ -58,7 +58,7 @@ def parse_idx_notation(raw: str) -> Index | None:
         else:
             return None
 
-    return Index(set(result)) if result else None
+    return Index(frozenset(result)) if result else None
 
 
 def instances_hint(app_ctx: AppContext) -> str:
