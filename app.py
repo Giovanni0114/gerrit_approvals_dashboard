@@ -415,9 +415,9 @@ class App:
             self.status_msg = "[dim]No active changes to toggle[/dim]"
             return
 
-        target = not all(ch.waiting for ch in candidates)
+        target = not all(ch.deleted for ch in candidates)
         for ch in candidates:
-            ch.waiting = target
+            ch.deleted = target
 
     def toggle_disabled(self, rows: Index) -> None:
         if rows.wildcard:
@@ -559,7 +559,7 @@ class App:
             self._add_comment(ch, text)
 
     def _add_comment(self, ch: TrackedChange, text: str) -> None:
-        ch.comments.append(text)
+        ch.comments = [*ch.comments, text]
 
     def replace_all_comments(self, rows: Index, text: str) -> None:
         for ch in self._resolve_index(rows):
@@ -574,7 +574,9 @@ class App:
 
     def _edit_last_comment(self, ch: TrackedChange, text: str) -> None:
         if ch.comments:
-            ch.comments[-1] = text
+            new = list(ch.comments)
+            new[-1] = text
+            ch.comments = new
 
     def delete_comment(self, rows: Index, comment_idx: Index) -> None:
         for ch in self._resolve_index(rows):
@@ -582,12 +584,14 @@ class App:
 
     def _delete_comment(self, ch: TrackedChange, comment_idx: Index) -> None:
         if comment_idx.wildcard:
-            ch.comments.clear()
+            ch.comments = []
             return
 
-        for idx in comment_idx:
-            if 0 <= idx < len(ch.comments):
-                ch.comments.pop(idx)
+        new = list(ch.comments)
+        for idx in sorted(comment_idx.values, reverse=True):
+            if 0 <= idx < len(new):
+                new.pop(idx)
+        ch.comments = new
 
     # --- Threading ---
 

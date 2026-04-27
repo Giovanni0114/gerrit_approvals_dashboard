@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
@@ -92,6 +93,9 @@ class Index:
 
     def __len__(self) -> int:
         return len(self.values)
+
+    def __iter__(self) -> Iterator[int]:
+        return iter(sorted(self.values))
 
     def __str__(self) -> str:
         return f"Index({sorted(self.values)})"
