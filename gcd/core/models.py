@@ -14,6 +14,9 @@ class ApprovalEntry:
     value: str
     by: str
 
+    def is_submitted(self) -> bool:
+        return self.label.lower() == "SUBM"
+
 
 @dataclass(frozen=True)
 class GerritInstance:
