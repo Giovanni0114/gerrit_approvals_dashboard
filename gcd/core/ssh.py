@@ -13,21 +13,21 @@ _log = ssh_logger()
 
 @dataclass(frozen=True)
 class SshResult:
-    result: Result
+    success: bool
     duration: float
     msg: str | None = None
     data: str | None = None
 
     def ok(self) -> bool:
-        return self.result == "success"
+        return self.success
 
 
 def _make_success_ssh_result(duration: float, data: str) -> SshResult:
-    return SshResult("success", duration=duration, data=data)
+    return SshResult(True, duration=duration, data=data)
 
 
 def _make_failure_ssh_result(duration: float, msg: str) -> SshResult:
-    return SshResult("failure", duration=duration, msg=msg)
+    return SshResult(False, duration=duration, msg=msg)
 
 
 class SSHCommunication:
