@@ -2,7 +2,6 @@ import os
 import tomllib
 from pathlib import Path
 
-from gcd.core.logs import app_logger
 from gcd.core.models import GerritInstance
 
 DEFAULT_INTERVAL = 30
@@ -10,8 +9,6 @@ DEFAULT_REFRESH_RATE = 20
 DEFAULT_CHANGES_FILENAME = "changes.json"
 DEFAULT_CACHE_FILENAME = "cache.json"
 DEFAULT_LOG_DIRNAME = "log"
-
-_logger = app_logger()
 
 
 class AppConfig:
@@ -96,8 +93,6 @@ class AppConfig:
         default_email = config_data.get("default_email")
         default_plugins_enabled = config_data.get("default_plugins_enabled", [])
 
-        _logger.info("default_plugins_enabled: %s", default_plugins_enabled)
-
         if default_host and default_port:
             self._instances.append(
                 GerritInstance(
@@ -169,7 +164,7 @@ class AppConfig:
     def ui_refresh_interval_sec(self) -> float:
         return 1 / self.ui_refresh_rate
 
-    def get_enabled_plugins_per_instance(self) -> set[str]:
+    def get_enabled_plugins_per_instance(self) -> dict[str, frozenset[str]]:
         return {ins.name: ins.enabled_plugins for ins in self._instances}
 
 
