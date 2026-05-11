@@ -81,9 +81,9 @@ def build_table(
     table.add_column("idx", style="dim", no_wrap=True, width=2)
     table.add_column("Number", style="magenta", no_wrap=True, width=6)
     table.add_column("Project", no_wrap=True)
-    table.add_column("Subject", max_width=60)
-    table.add_column("Comments", no_wrap=False, ratio=50)
-    table.add_column("Approvals", no_wrap=False, ratio=25)
+    table.add_column("Subject", max_width=50, no_wrap=True)
+    table.add_column("Comments", no_wrap=False, ratio=40)
+    table.add_column("Approvals", no_wrap=False, ratio=35)
 
     selected = selected_rows or frozenset()
     for idx, ch in enumerate(changes.get_all(), 1):
